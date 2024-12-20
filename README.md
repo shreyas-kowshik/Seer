@@ -77,7 +77,7 @@ If you find the project helpful for your research, please consider citing our pa
 ```bibtex
 @article{tian2024seer,
   title={Predictive Inverse Dynamics Models are Scalable Learners for Robotic Manipulation},
-  author={Tian, Yang and Yang, Sizhe and Zeng, Jia and Xia, Wenke and Wang, Ping and Lin, Dahua and Hao, Haoming and Pang, Jiangmiao},
+  author={Tian, Yang and Yang, Sizhe and Zeng, Jia and Wang, Ping and Lin, Dahua and Dong, Hao and Pang, Jiangmiao},
   journal={https://arxiv.org/abs/2412.15109},
   year={2024}
 }
