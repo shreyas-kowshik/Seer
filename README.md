@@ -4,12 +4,14 @@
 </div>
 
 <h3 align="center">
-  <a>Arxiv</a> |
+  <a href="https://arxiv.org/pdf/2412.15109">Arxiv</a> |
   <a>Video</a> |
   <a href="https://nimolty.github.io/Seer/">Webpage</a>
 </h3>
 
-https://github.com/user-attachments/assets/e339a6ae-a31e-4974-9537-85442895c00a
+
+https://github.com/user-attachments/assets/49036e84-c397-4589-9024-efb05b14efa0
+
 
 <br><br>
 
@@ -21,7 +23,8 @@ https://github.com/user-attachments/assets/e339a6ae-a31e-4974-9537-85442895c00a
 3. [Checkpoints](#checkpoints)
 4. [TODO List](#todos)
 5. [License](#license)
-6. [Acknowledgment](#acknowledgment)
+6. [Citation](#citation).
+7. [Acknowledgment](#acknowledgment)
 
 ## :fire: Highlights <a name="high"></a>
 <img width="1000" alt="seer" src="assets/seer_method.jpg">
@@ -68,6 +71,17 @@ Relevant checkpoints are available on the [website](https://drive.google.com/dri
 ## License <a name="license"></a>
 
 All assets and code are under the [Apache 2.0 license](./LICENSE) unless specified otherwise.
+
+## Citation <a name="citation"></a>
+If you find the project helpful for your research, please consider citing our paper:
+```bibtex
+@article{tian2024seer,
+  title={Predictive Inverse Dynamics Models are Scalable Learners for Robotic Manipulation},
+  author={Tian, Yang and Yang, Sizhe and Zeng, Jia and Xia, Wenke and Wang, Ping and Lin, Dahua and Hao, Haoming and Pang, Jiangmiao},
+  journal={https://arxiv.org/abs/2412.15109},
+  year={2024}
+}
+```
 
 ## Acknowledgment <a name="acknowledgment"></a>
 This project builds upon [GR-1](https://github.com/bytedance/GR-1) and [Roboflamingo](https://github.com/RoboFlamingo/RoboFlamingo). We thank these teams for their open-source contributions.
