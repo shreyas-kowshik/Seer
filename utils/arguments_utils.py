@@ -164,6 +164,7 @@ def get_parser(is_eval=False):
     # save checkpoint
     parser.add_argument("--start_save_checkpoint", default=-1, type=int)
     parser.add_argument("--save_checkpoint", default=False, action="store_true")
+    parser.add_argument("--save_checkpoint_path", required=True, type=str)
     parser.add_argument("--save_checkpoint_seq", type=int, default=1)
     # if validate
     parser.add_argument("--validation", default=False, action="store_true")
@@ -191,6 +192,7 @@ def get_parser(is_eval=False):
     # obs_pred
     parser.add_argument("--obs_pred", default=False, action="store_true")
     parser.add_argument("--atten_only_obs", default=False, action="store_true")
+    parser.add_argument("--attn_robot_proprio_state", default=False, action="store_true")
     parser.add_argument("--atten_goal", default=0, type=int)
     parser.add_argument("--atten_goal_state", default=False, action="store_true")
     # action mask ratio
@@ -204,7 +206,7 @@ def get_parser(is_eval=False):
     # loss
     parser.add_argument("--loss_action", default=False, action="store_true")
     parser.add_argument("--loss_image", default=False, action="store_true")
-    parser.add_argument("--checkpoint_path", required=True, type=str)
+    
     # calvin
     parser.add_argument("--except_lang", default=False, action="store_true")
     # gpt2
@@ -251,7 +253,7 @@ def get_parser(is_eval=False):
         )
         parser.add_argument("--pad_length", type=int, default=-1)
     parser.add_argument("--window_size", type=int, default=13)
-    parser.add_argument("--vit_ckpt_path", type=str)
+    parser.add_argument("--vit_checkpoint_path", type=str)
     args = parser.parse_args()
 
     return parser

@@ -35,7 +35,7 @@ def main():
     model = SeerAgent(
         finetune_type=args.finetune_type,
         clip_device=device_id,
-        checkpoint_path=args.vit_ckpt_path,
+        vit_checkpoint_path=args.vit_checkpoint_path,
         sequence_length=args.sequence_length,
         num_resampler_query=args.num_resampler_query,
         num_obs_token_per_image=args.num_obs_token_per_image,
@@ -44,6 +44,7 @@ def main():
         action_pred_steps=args.action_pred_steps,
         obs_pred=args.obs_pred,
         atten_only_obs=args.atten_only_obs,
+        attn_robot_proprio_state=args.attn_robot_proprio_state,
         atten_goal=args.atten_goal,
         atten_goal_state=args.atten_goal_state,
         mask_l_obs_ratio=args.mask_l_obs_ratio,

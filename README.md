@@ -5,7 +5,6 @@
 
 <h3 align="center">
   <a href="https://arxiv.org/pdf/2412.15109">Arxiv</a> |
-  <a>Video</a> |
   <a href="https://nimolty.github.io/Seer/">Webpage</a>
 </h3>
 
@@ -59,13 +58,13 @@ This section details the pre-training process of Seer in real-world experiments,
 Relevant checkpoints are available on the [website](https://drive.google.com/drive/folders/1F3IE95z2THAQ_lt3DKUFdRGc86Thsnc7?usp=sharing).
 |Model|Checkpoint|
 |:------:|:------:|
-|CALVIN ABC-D|[Seer](https://drive.google.com/drive/folders/17Gv9snGCkViuhHmzN3eTWlI0tMfGSGT3?usp=sharing) / [Seer Large](https://drive.google.com/drive/folders/1AFabqfDEi69oMo0FTGhEiH2QSRLYBR9r?usp=drive_link)|
+|CALVIN ABC-D|[Seer](https://drive.google.com/drive/folders/17Gv9snGCkViuhHmzN3eTWlI0tMfGSGT3?usp=sharing) (Avg.Len. : 3.98) / [Seer Large](https://drive.google.com/drive/folders/1AFabqfDEi69oMo0FTGhEiH2QSRLYBR9r?usp=drive_link)  (Avg.Len. : 4.30)|
 |Real-World|[Seer (Droid Pre-trained)](https://drive.google.com/drive/folders/1rT8JKLhJGIo97jfYUm2JiFUrogOq-dgJ?usp=drive_link)|
 
 ## 📆 TODO <a name="todos"></a>
 - [x] Release real-world expriment code. 
 - [x] Release CALVIN ABC-D experiment code (Seer).
-- [ ] Release CALVIN ABC-D experiment code (Seer-Large).
+- [x] Release CALVIN ABC-D experiment code (Seer-Large).
 - [ ] Release LIBERO-LONG experiment code.
 
 ## License <a name="license"></a>

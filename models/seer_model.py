@@ -1,3 +1,5 @@
+
+import os
 import random
 from functools import partial
 from copy import deepcopy
@@ -18,6 +20,7 @@ import random
 
 def generate_attention_mask(K, num_A, num_B, atten_goal, atten_goal_state,
                             atten_only_obs,
+                            attn_robot_proprio_state,
                             mask_l_obs_ratio,
                             num_obs_token, action_pred_steps):
     # num_A: 1+1+self.NUM_RESAMPLER_QUERY*2+1*2
@@ -43,6 +46,8 @@ def generate_attention_mask(K, num_A, num_B, atten_goal, atten_goal_state,
             attention_mask[start_index+num_A+num_obs_token:start_index+num_A+num_obs_token+action_pred_steps] = -float('inf')
             attention_mask[start_index+num_A+num_obs_token:start_index+num_A+num_obs_token+action_pred_steps, start_index+2:start_index+num_A] = 0.0
             attention_mask[start_index+num_A+num_obs_token:start_index+num_A+num_obs_token+action_pred_steps, start_index+num_A:start_index+num_A+num_obs_token] = 0.0 
+            if attn_robot_proprio_state:
+                attention_mask[start_index+num_A+num_obs_token:start_index+num_A+num_obs_token+action_pred_steps, start_index+1:start_index+2] = 0.0
             if mask_l_obs_ratio > 0:
                 count = int(mask_l_obs_ratio * (num_obs_token))
                 selected_numbers = np.random.choice(range(num_obs_token), size=count, replace=False)
@@ -112,12 +117,13 @@ class SeerAgent(nn.Module):
         self,
         finetune_type,
         clip_device,
-        checkpoint_path,
+        vit_checkpoint_path,
         sequence_length=10,
         num_resampler_query=9,
         num_obs_token_per_image=10,
         obs_pred=False,
         atten_only_obs=False,
+        attn_robot_proprio_state=False,
         atten_goal=False,
         atten_goal_state=False,
         mask_l_obs_ratio=0.0,
@@ -142,19 +148,20 @@ class SeerAgent(nn.Module):
         self.atten_goal = atten_goal
         self.atten_goal_state = atten_goal_state
         self.atten_only_obs = atten_only_obs
+        self.attn_robot_proprio_state = attn_robot_proprio_state
         self.mask_l_obs_ratio = mask_l_obs_ratio
         self.hidden_dim = hidden_dim
         self.phase = phase
         assert self.phase in ["pretrain", "finetune", "evaluate"]
         self.gripper_width = gripper_width
-        self.checkpoint_path = checkpoint_path
+        self.vit_checkpoint_path = vit_checkpoint_path
 
         # text projector
         self.text_projector = nn.Linear(512, self.hidden_dim)        
 
         # state encoder
-        ARM_STATE_FEATURE_DIM = 384
-        GRIPPER_STATE_FEATURE_DIM = 384
+        ARM_STATE_FEATURE_DIM = self.hidden_dim 
+        GRIPPER_STATE_FEATURE_DIM = self.hidden_dim
         self.arm_state_encoder = nn.Linear(6, ARM_STATE_FEATURE_DIM)
         self.gripper_state_encoder = nn.Linear(2, GRIPPER_STATE_FEATURE_DIM)
         self.state_projector = nn.Linear(ARM_STATE_FEATURE_DIM + GRIPPER_STATE_FEATURE_DIM, self.hidden_dim)
@@ -204,6 +211,7 @@ class SeerAgent(nn.Module):
                                     atten_goal=self.atten_goal,
                                     atten_goal_state=self.atten_goal_state,
                                     atten_only_obs=self.atten_only_obs,
+                                    attn_robot_proprio_state = self.attn_robot_proprio_state,
                                     mask_l_obs_ratio=self.mask_l_obs_ratio,
                                     num_obs_token=this_num_obs_token,
                                     action_pred_steps=self.action_pred_steps), 
@@ -218,21 +226,22 @@ class SeerAgent(nn.Module):
         self.transformer_backbone = GPT2Model(config)
 
         # action decoder
+        MLP_hidden_dim = self.hidden_dim // 2
         self.action_decoder = nn.Sequential(
-            nn.Linear(self.hidden_dim, 192),
+            nn.Linear(self.hidden_dim, MLP_hidden_dim),
             nn.ReLU(),
-            nn.Linear(192, 192),
+            nn.Linear(MLP_hidden_dim, MLP_hidden_dim),
             nn.ReLU(),
         )
         self.arm_action_decoder = nn.Sequential(
-            nn.Linear(192, 6),
+            nn.Linear(MLP_hidden_dim, 6),
             torch.nn.Tanh(),
         )
         self.gripper_action_decoder = nn.Sequential(
-            nn.Linear(192, 1),
+            nn.Linear(MLP_hidden_dim, 1),
             torch.nn.Sigmoid(),
         )
-        self.IMAGE_DECODER_hidden_dim = 384
+        self.IMAGE_DECODER_hidden_dim = self.hidden_dim
         self.NUM_MASK_TOKEN = int(calvin_input_image_size**2 / patch_size / patch_size)  # i.e. num_patch
         self.PATCH_SIZE = patch_size
         self.mask_token = nn.Parameter(torch.zeros(1, 1, self.IMAGE_DECODER_hidden_dim))
@@ -249,11 +258,15 @@ class SeerAgent(nn.Module):
         self.initialize_weights()
 
         # freeze vision encoder
-        checkpoint = torch.load(checkpoint_path, map_location='cpu')
-        msg = self.vision_encoder.load_state_dict(checkpoint['model'], strict=False)
+        print(self.vit_checkpoint_path)
+        vit_checkpoint = torch.load(self.vit_checkpoint_path, map_location='cpu')
+        self.vision_encoder.load_state_dict(vit_checkpoint['model'], strict=False)
 
         # # freeze text encoder
-        self.clip_model, self.image_processor = clip.load("ViT-B/32", device=clip_device)
+        if os.path.exists("checkpoints/clip/ViT-B-32.pt"):
+            self.clip_model, self.image_processor = clip.load("checkpoints/clip/ViT-B-32.pt", device=clip_device)
+        else:
+            self.clip_model, self.image_processor = clip.load("ViT-B/32", device=clip_device)
 
     def initialize_weights(self):
         # initialization
@@ -298,6 +311,7 @@ class SeerAgent(nn.Module):
                             atten_goal=self.atten_goal,
                             atten_goal_state=self.atten_goal_state,
                             atten_only_obs=self.atten_only_obs,
+                            attn_robot_proprio_state = self.attn_robot_proprio_state,
                             mask_l_obs_ratio=self.mask_l_obs_ratio,
                             num_obs_token=this_num_obs_token,
                             action_pred_steps=self.action_pred_steps).to(self.device), 

@@ -223,29 +223,29 @@ def train_one_epoch_calvin(
                 )
 
         avg_horizon = min(100, len(mv_avg_loss))
-        t.set_postfix({"avg loss": sum(mv_avg_loss[-avg_horizon:]) / avg_horizon, "loss": loss_calvin.item(), "loss_arm_action": loss_arm_action.item(), "loss_gripper_action": loss_gripper_action.item()})
+        t.set_postfix({"avg loss": sum(mv_avg_loss[-avg_horizon:]) / avg_horizon, "loss": loss_calvin.item(), "loss_image": loss_image.item(), "loss_arm_action": loss_arm_action.item(), "loss_gripper_action": loss_gripper_action.item()})
 
-        if args.save_every_iter != -1 and args.save_checkpoint and global_step % args.save_every_iter == 0 and global_step > 0:
+        # if args.save_every_iter != -1 and args.save_checkpoint and global_step % args.save_every_iter == 0 and global_step > 0:
                 
-            if args.rank == 0:
-                import os
-                if not os.path.exists(f"{args.checkpoint_path}/exp/{args.run_name}"):
-                    os.makedirs(f"{args.checkpoint_path}/exp/{args.run_name}")
+        #     if args.rank == 0:
+        #         import os
+        #         if not os.path.exists(f"{args.save_checkpoint_path}/exp/{args.run_name}"):
+        #             os.makedirs(f"{args.save_checkpoint_path}/exp/{args.run_name}")
 
-                checkpoint_dict = {
-                    "epoch": epoch,
-                    "model_state_dict": get_checkpoint(model),
-                    "optimizer_state_dict": optimizer.state_dict(),
-                    "lr_scheduler_state_dict": lr_scheduler.state_dict(),
-                }
+        #         checkpoint_dict = {
+        #             "epoch": epoch,
+        #             "model_state_dict": get_checkpoint(model),
+        #             "optimizer_state_dict": optimizer.state_dict(),
+        #             "lr_scheduler_state_dict": lr_scheduler.state_dict(),
+        #         }
 
-                ckpt_name = get_ckpt_name(args, global_step)
-                ckpt_path = os.path.join(f"{args.checkpoint_path}/exp", args.run_name, ckpt_name)
-                print(f"Saving checkpoint to {ckpt_path}")
-                torch.save(checkpoint_dict, ckpt_path)
-                if args.delete_previous_checkpoint:
-                    if epoch > 0:
-                        os.remove(ckpt_path)
+        #         ckpt_name = get_ckpt_name(args, global_step)
+        #         ckpt_path = os.path.join(f"{args.save_checkpoint_path}/exp", args.run_name, ckpt_name)
+        #         print(f"Saving checkpoint to {ckpt_path}")
+        #         torch.save(checkpoint_dict, ckpt_path)
+        #         if args.delete_previous_checkpoint:
+        #             if epoch > 0:
+        #                 os.remove(ckpt_path)
 
 def get_checkpoint(model):
     state_dict = model.state_dict()

@@ -25,9 +25,18 @@ def random_seed(seed=42, rank=0):
     np.random.seed(seed + rank)
     random.seed(seed + rank)
 
+def count_parameters(model):
+    total_params = 0
+    trainable_params = 0
+    for param in model.parameters():
+        total_params += param.numel()
+        if param.requires_grad:
+            trainable_params += param.numel()
+    return total_params, trainable_params
+
 @record
 def main(args):
-    os.environ["WANDB_DIR"] = f"{os.path.abspath(args.checkpoint_path)}"
+    os.environ["WANDB_DIR"] = f"{os.path.abspath(args.save_checkpoint_path)}"
     if args.save_checkpoints_to_wandb and args.save_checkpoint and not args.report_to_wandb:
         raise ValueError("save_checkpoints_to_wandb requires report_to_wandb")
     if args.offline:
@@ -37,10 +46,14 @@ def main(args):
     device_id = init_distributed_device(args)
     print("device_id: ", device_id)
     random_seed(args.seed, args.rank)
+    ptbs = args.world_size * args.batch_size * args.gradient_accumulation_steps
+    print("training batch size:", ptbs)
+    args.run_name = args.run_name.replace("Seer", f"Seer_ptbs{ptbs}_{args.transformer_layers}layers_{args.transformer_heads}heads_hd{args.hidden_dim}")
+    print("run_name:", args.run_name)
     model = SeerAgent(
         finetune_type=args.finetune_type,
         clip_device=device_id,
-        checkpoint_path=args.vit_ckpt_path,
+        vit_checkpoint_path=args.vit_checkpoint_path,
         sequence_length=args.sequence_length,
         num_resampler_query=args.num_resampler_query,
         num_obs_token_per_image=args.num_obs_token_per_image,
@@ -49,6 +62,7 @@ def main(args):
         action_pred_steps=args.action_pred_steps,
         obs_pred=args.obs_pred,
         atten_only_obs=args.atten_only_obs,
+        attn_robot_proprio_state=args.attn_robot_proprio_state,
         atten_goal=args.atten_goal,
         atten_goal_state=args.atten_goal_state,
         mask_l_obs_ratio=args.mask_l_obs_ratio,
@@ -96,6 +110,9 @@ def main(args):
             model.image_decoder_obs_pred_projector.bfloat16()
     model.clip_model.requires_grad_(False)
     model.vision_encoder.requires_grad_(False)
+    total_params, trainable_params = count_parameters(model)
+    print("total_params: {} M".format(total_params/1024/1024))
+    print("trainable_params: {} M".format(trainable_params/1024/1024))
     model = model.to(device_id)
     model._init_model_type()
     ddp_model = DDP(model, device_ids=[device_id], find_unused_parameters=True)
@@ -170,6 +187,11 @@ def main(args):
         optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         lr_scheduler.load_state_dict(checkpoint["lr_scheduler_state_dict"])
         resume_from_epoch = checkpoint["epoch"] + 1
+
+    ckpt_dir = os.path.join(f"{args.save_checkpoint_path}", args.run_name)
+    if args.rank == 0 and not os.path.exists(ckpt_dir):
+        os.makedirs(ckpt_dir)
+    
     ddp_model.train()
     for epoch in range(resume_from_epoch, args.num_epochs):
         calvin_dataset.set_epoch(epoch)
@@ -185,8 +207,6 @@ def main(args):
             wandb=wandb,
         )
         if args.rank == 0 and args.save_checkpoint and epoch % args.save_checkpoint_seq == 0 and epoch > args.start_save_checkpoint:
-            if not os.path.exists(f"{args.checkpoint_path}/exp/{args.run_name}"):
-                os.makedirs(f"{args.checkpoint_path}/exp/{args.run_name}")
             checkpoint_dict = {
                 "epoch": epoch,
                 "model_state_dict": get_checkpoint(ddp_model),
@@ -194,7 +214,7 @@ def main(args):
                 "lr_scheduler_state_dict": lr_scheduler.state_dict(),
             }
             ckpt_name = get_ckpt_name(args, epoch)
-            ckpt_path = os.path.join(f"{args.checkpoint_path}/exp", args.run_name, ckpt_name)
+            ckpt_path = os.path.join(ckpt_dir, ckpt_name)
             print(f"Saving checkpoint to {ckpt_path}")
             torch.save(checkpoint_dict, ckpt_path)
             if args.delete_previous_checkpoint:

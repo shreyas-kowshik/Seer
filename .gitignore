@@ -1,3 +1,9 @@
+# workspace
+calvin
+checkpoints
+eval_logs
+evaluate
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

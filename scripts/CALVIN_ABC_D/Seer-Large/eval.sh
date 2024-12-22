@@ -4,7 +4,7 @@ calvin_dataset_path="calvin/dataset/task_ABC_D"
 calvin_conf_path="calvin/calvin_models/conf"
 vit_checkpoint_path="checkpoints/vit_mae/mae_pretrain_vit_base.pth" # downloaded from https://drive.google.com/file/d/1bSsvRI4mDM3Gg51C6xO0l9CbojYw3OEt/view?usp=sharing
 ### NEED TO CHANGE the checkpoint path ###
-resume_from_checkpoint="checkpoints/CALVIN_ABC_D/Seer/finetine_bs=640_lr1e-4_atten_goal_state4_atten_only_obs_sv10_abc_reset_act_obs_ep5_abc/19.pth"  #"xxx/xxx.pth"
+resume_from_checkpoint="checkpoints/CALVIN_ABC_D/Seer_Large/12.pth" # checkpoint path to be evaluated
 IFS='/' read -ra path_parts <<< "$resume_from_checkpoint"
 run_name="${path_parts[-2]}"
 log_name="${path_parts[-1]}"
@@ -14,7 +14,7 @@ log_file="eval_logs/$run_name/evaluate_$log_name.log"
 node=1
 node_num=8
 
-torchrun --nnodes=${node} --nproc_per_node=${node_num} --master_port=10012 eval_calvin.py \
+torchrun --nnodes=${node} --nproc_per_node=${node_num} --master_port=10211 eval_calvin.py\
     --traj_cons \
     --rgb_pad 10 \
     --gripper_pad 4 \
@@ -31,12 +31,12 @@ torchrun --nnodes=${node} --nproc_per_node=${node_num} --master_port=10012 eval_
     --batch_size 64 \
     --precision fp32 \
     --weight_decay 1e-4 \
-    --num_resampler_query 6 \
-    --num_obs_token_per_image 9 \
+    --num_resampler_query 16 \
+    --num_obs_token_per_image 16 \
     --run_name ${run_name} \
     --transformer_layers 24 \
-    --hidden_dim 384 \
-    --transformer_heads 12 \
+    --hidden_dim 1024 \
+    --transformer_heads 16 \
     --phase "evaluate" \
     --finetune_type "calvin" \
     --action_pred_steps 3 \

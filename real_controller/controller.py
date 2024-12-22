@@ -92,7 +92,7 @@ class SeerController:
         self.model = SeerAgent(
             finetune_type=self.args.finetune_type,
             clip_device=self.device_id,
-            checkpoint_path=self.args.vit_ckpt_path,
+            save_checkpoint_path=self.args.vit_checkpoint_path,
             sequence_length=self.args.sequence_length,
             num_resampler_query=self.args.num_resampler_query,
             num_obs_token_per_image=self.args.num_obs_token_per_image,

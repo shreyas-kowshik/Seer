@@ -1,7 +1,7 @@
 ### NEED TO CHANGE ###
-checkpoint_path="xxx/checkpoints"
+save_checkpoint_path="xxx/checkpoints"
 root_dir="xxx/preprocess"
-vit_ckpt_path="xxx/mae_pretrain_vit_base.pth" # downloaded from https://drive.google.com/file/d/1bSsvRI4mDM3Gg51C6xO0l9CbojYw3OEt/view?usp=sharing
+vit_checkpoint_path="xxx/mae_pretrain_vit_base.pth" # downloaded from https://drive.google.com/file/d/1bSsvRI4mDM3Gg51C6xO0l9CbojYw3OEt/view?usp=sharing
 ### NEED TO CHANGE ###
 
 ### EXAMPLE ###
@@ -23,7 +23,7 @@ torchrun --nnodes=${node} --nproc_per_node=${node_num} --master_port=62345 train
     --gripper_pad 4 \
     --gradient_accumulation_steps 2 \
     --bf16_module "vision_encoder" \
-    --vit_ckpt_path ${vit_ckpt_path} \
+    --vit_checkpoint_path ${vit_checkpoint_path} \
     --calvin_dataset "" \
     --workers 8 \
     --lr_scheduler cosine \
@@ -39,7 +39,7 @@ torchrun --nnodes=${node} --nproc_per_node=${node_num} --master_port=62345 train
     --weight_decay 1e-4 \
     --num_resampler_query 6 \
     --run_name sn_full_droid \
-    --checkpoint_path ${checkpoint_path} \
+    --save_checkpoint_path ${save_checkpoint_path} \
     --except_lang \
     --transformer_layers 24 \
     --phase "pretrain" \

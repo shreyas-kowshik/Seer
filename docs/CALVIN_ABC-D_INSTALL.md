@@ -1,6 +1,6 @@
 # Installation
 
-**(1) Env**
+**(1) Conda Env**
 ```python
 conda create -n seer python=3.10
 conda activate seer
@@ -27,4 +27,10 @@ sh download_data.sh ABC
 cd ${YOUR_PATH_TO_SEER}
 pip install -r requirements.txt
 pip install torch==2.2.0 torchvision==0.17.0 torchaudio==2.2.0 --index-url https://download.pytorch.org/whl/cu121
+```
+
+**(5) Create a soft link to CALVIN**
+```python
+cd ${YOUR_PATH_TO_SEER}
+ln -s $CALVIN_ROOT calvin
 ```
