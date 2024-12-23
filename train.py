@@ -45,7 +45,7 @@ def main(args):
     args.local_rank, args.rank, args.world_size = world_info_from_env()
     device_id = init_distributed_device(args)
     print("device_id: ", device_id)
-    random_seed(args.seed, args.rank)
+    random_seed(args.seed)
     ptbs = args.world_size * args.batch_size * args.gradient_accumulation_steps
     print("training batch size:", ptbs)
     args.run_name = args.run_name.replace("Seer", f"Seer_ptbs{ptbs}_{args.transformer_layers}layers_{args.transformer_heads}heads_hd{args.hidden_dim}")
@@ -84,6 +84,7 @@ def main(args):
         calvin_dataset = get_real_finetune_dataset(args, model.image_processor, clip, epoch=0)
     elif args.finetune_type == "oxe":
         calvin_dataset = get_oxe_dataset(args, model.image_processor, clip, epoch=0)
+    random_seed(args.seed, args.rank)
     print(f"Start running training on rank {args.rank}.")
     if args.rank == 0 and args.report_to_wandb:
         print("wandb_project :", args.wandb_project)

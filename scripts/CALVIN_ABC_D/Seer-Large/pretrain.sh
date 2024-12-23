@@ -47,4 +47,3 @@ torchrun --nnodes=${node} --nproc_per_node=${node_num} --master_port=10211 train
     --except_lang \
     --save_checkpoint \
     --report_to_wandb \
-    --offline \
