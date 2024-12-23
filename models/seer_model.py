@@ -1,4 +1,3 @@
-
 import os
 import random
 from functools import partial
@@ -258,9 +257,8 @@ class SeerAgent(nn.Module):
         self.initialize_weights()
 
         # freeze vision encoder
-        print(self.vit_checkpoint_path)
         vit_checkpoint = torch.load(self.vit_checkpoint_path, map_location='cpu')
-        self.vision_encoder.load_state_dict(vit_checkpoint['model'], strict=False)
+        msg = self.vision_encoder.load_state_dict(vit_checkpoint['model'], strict=False)
 
         # # freeze text encoder
         if os.path.exists("checkpoints/clip/ViT-B-32.pt"):

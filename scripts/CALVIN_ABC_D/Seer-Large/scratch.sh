@@ -1,13 +1,3 @@
-source /cpfs03/user/zengjia/.bashrc
-export proxy_link="https://zengjia:jIH62uSfOwPYTaDOeppzhdYDWXHHZgaEj9zpCqsGXprv1u4Z16oGxcbrF20y@aliyun-proxy.pjlab.org.cn:13128/"
-export http_proxy=${proxy_link}
-export https_proxy=${proxy_link}
-export HTTP_PROXY=${proxy_link}
-export HTTPS_PROXY=${proxy_link}
-cd /cpfs03/user/zengjia/projects/seer/Seer-Release/Seer/
-source /cpfs03/user/zengjia/softwares/miniconda3/etc/profile.d/conda.sh
-conda activate seer
-
 #!/bin/bash
 ### need to change to your path ###
 calvin_dataset_path="calvin/dataset/task_ABC_D"
@@ -31,7 +21,7 @@ torchrun --nnodes=${node} --nproc_per_node=${node_num} --master_port=10211 train
     --batch_size 8 \
     --precision fp32 \
     --learning_rate 1e-3 \
-    --warmup_epochs 3 \
+    --warmup_epochs 1 \
     --finetune_type "calvin" \
     --wandb_project seer \
     --weight_decay 1e-4 \
@@ -52,4 +42,3 @@ torchrun --nnodes=${node} --nproc_per_node=${node_num} --master_port=10211 train
     --loss_image \
     --loss_action \
     --report_to_wandb \
-    --offline \

@@ -3,8 +3,10 @@ export GIT_PYTHON_REFRESH=quiet
 calvin_dataset_path="calvin/dataset/task_ABC_D"
 calvin_conf_path="calvin/calvin_models/conf"
 vit_checkpoint_path="checkpoints/vit_mae/mae_pretrain_vit_base.pth" # downloaded from https://drive.google.com/file/d/1bSsvRI4mDM3Gg51C6xO0l9CbojYw3OEt/view?usp=sharing
+save_checkpoint_path="checkpoints/"
 ### NEED TO CHANGE the checkpoint path ###
-resume_from_checkpoint="checkpoints/CALVIN_ABC_D/Seer/finetine_bs=640_lr1e-4_atten_goal_state4_atten_only_obs_sv10_abc_reset_act_obs_ep5_abc/19.pth"  #"xxx/xxx.pth"
+#resume_from_checkpoint="checkpoints/CALVIN_ABC_D/Seer/finetine_bs=640_lr1e-4_atten_goal_state4_atten_only_obs_sv10_abc_reset_act_obs_ep5_abc/15.pth"  #"xxx/xxx.pth"
+resume_from_checkpoint="checkpoints/scratch_calvin_abc_d/15.pth"
 IFS='/' read -ra path_parts <<< "$resume_from_checkpoint"
 run_name="${path_parts[-2]}"
 log_name="${path_parts[-1]}"
@@ -34,6 +36,7 @@ torchrun --nnodes=${node} --nproc_per_node=${node_num} --master_port=10012 eval_
     --num_resampler_query 6 \
     --num_obs_token_per_image 9 \
     --run_name ${run_name} \
+    --save_checkpoint_path ${save_checkpoint_path} \
     --transformer_layers 24 \
     --hidden_dim 384 \
     --transformer_heads 12 \

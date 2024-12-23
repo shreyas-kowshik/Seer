@@ -4,13 +4,13 @@ calvin_dataset_path="calvin/dataset/task_ABC_D"
 save_checkpoint_path="checkpoints/"
 vit_checkpoint_path="checkpoints/vit_mae/mae_pretrain_vit_base.pth" # downloaded from https://drive.google.com/file/d/1bSsvRI4mDM3Gg51C6xO0l9CbojYw3OEt/view?usp=sharing
 
-node=1
-node_num=1
+node=8
+node_num=8
 torchrun --nnodes=${node} --nproc_per_node=${node_num} --master_port=10211 train.py \
     --traj_cons \
     --rgb_pad 10 \
     --gripper_pad 4 \
-    --gradient_accumulation_steps 4 \
+    --gradient_accumulation_steps 1 \
     --bf16_module "vision_encoder" \
     --vit_checkpoint_path ${vit_checkpoint_path} \
     --calvin_dataset ${calvin_dataset_path} \
@@ -19,10 +19,9 @@ torchrun --nnodes=${node} --nproc_per_node=${node_num} --master_port=10211 train
     --save_every_iter 100000 \
     --num_epochs 20 \
     --seed 42 \
-    --batch_size 16 \
+    --batch_size 8 \
     --precision fp32 \
     --learning_rate 1e-3 \
-    
     --finetune_type "calvin" \
     --wandb_project seer \
     --weight_decay 1e-4 \
