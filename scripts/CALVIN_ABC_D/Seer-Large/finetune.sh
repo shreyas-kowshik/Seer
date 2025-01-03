@@ -2,7 +2,7 @@
 ### need to change to your path ###
 calvin_dataset_path="calvin/dataset/task_ABC_D"
 save_checkpoint_path="checkpoints/"
-finetune_from_pretrained_ckpt="checkpoints/pretrain_Seer_ptbs512_24layers_16heads_hd1024-Large_calvin_abc_d/5.pth"
+finetune_from_pretrained_ckpt="checkpoints/ABC_D/xxx/xx.pth"
 vit_checkpoint_path="checkpoints/vit_mae/mae_pretrain_vit_base.pth" # downloaded from https://drive.google.com/file/d/1bSsvRI4mDM3Gg51C6xO0l9CbojYw3OEt/view?usp=sharing
 node=8
 node_num=8
@@ -28,7 +28,7 @@ torchrun --nnodes=${node} --nproc_per_node=${node_num} --master_port=10211 train
     --weight_decay 1e-4 \
     --num_resampler_query 16 \
     --num_obs_token_per_image 16 \
-    --run_name finetune_Seer-Large_calvin_abc_d_ep6 \
+    --run_name finetune_Seer-Large_calvin_abc_d \
     --save_checkpoint_path ${save_checkpoint_path} \
     --transformer_layers 24 \
     --hidden_dim 1024 \

@@ -31,7 +31,7 @@ def main():
     args.local_rank, args.rank, args.world_size = world_info_from_env()
     device_id = init_distributed_device(args)
     print("device_id: ", device_id)
-    random_seed(args.seed, args.rank)
+    random_seed(args.seed)
     model = SeerAgent(
         finetune_type=args.finetune_type,
         clip_device=device_id,
@@ -55,6 +55,7 @@ def main():
         gripper_width=args.gripper_width,
     )
     calvin_dataset = get_calvin_dataset(args, model.image_processor, clip, epoch=0)
+    random_seed(args.seed, args.rank)
     print(f"Start running training on rank {args.rank}.")
     if args.rank == 0 and args.report_to_wandb:
         wandb.init(

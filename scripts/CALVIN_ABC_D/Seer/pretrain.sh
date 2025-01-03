@@ -5,13 +5,13 @@ save_checkpoint_path="checkpoints/"
 vit_checkpoint_path="checkpoints/vit_mae/mae_pretrain_vit_base.pth" # downloaded from https://drive.google.com/file/d/1bSsvRI4mDM3Gg51C6xO0l9CbojYw3OEt/view?usp=sharing
 ### NEED TO CHANGE ###
 
-node=1
-node_num=1
+node=8
+node_num=8
 torchrun --nnodes=${node} --nproc_per_node=${node_num} --master_port=10211 train.py \
     --traj_cons \
     --rgb_pad 10 \
     --gripper_pad 4 \
-    --gradient_accumulation_steps 8 \
+    --gradient_accumulation_steps 1 \
     --bf16_module "vision_encoder" \
     --vit_checkpoint_path ${vit_checkpoint_path} \
     --calvin_dataset ${calvin_dataset_path} \
@@ -27,7 +27,7 @@ torchrun --nnodes=${node} --nproc_per_node=${node_num} --master_port=10211 train
     --wandb_project seer \
     --weight_decay 1e-4 \
     --num_resampler_query 6 \
-    --run_name pretrain_calvin_abc_d \
+    --run_name pretrain_seer_calvin_abc_d \
     --save_checkpoint_path ${save_checkpoint_path} \
     --transformer_layers 24 \
     --phase "pretrain" \

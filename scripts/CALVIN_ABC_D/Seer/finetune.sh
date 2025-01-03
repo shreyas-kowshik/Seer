@@ -2,17 +2,17 @@
 ### NEED TO CHANGE ###
 calvin_dataset_path="calvin/dataset/task_ABC_D"
 save_checkpoint_path="checkpoints/"
-finetune_from_pretrained_ckpt="xxx/xxx.pth"
+finetune_from_pretrained_ckpt="checkpoints/pretrain_calvin_abc_d/4.pth"
 vit_checkpoint_path="checkpoints/vit_mae/mae_pretrain_vit_base.pth" # downloaded from https://drive.google.com/file/d/1bSsvRI4mDM3Gg51C6xO0l9CbojYw3OEt/view?usp=sharing
 ### NEED TO CHANGE ###
 
-node=1
-node_num=1
+node=4
+node_num=8
 torchrun --nnodes=${node} --nproc_per_node=${node_num} --master_port=10211 train.py \
     --traj_cons \
     --rgb_pad 10 \
     --gripper_pad 4 \
-    --gradient_accumulation_steps 4 \
+    --gradient_accumulation_steps 1 \
     --bf16_module "vision_encoder" \
     --vit_checkpoint_path ${vit_checkpoint_path} \
     --calvin_dataset ${calvin_dataset_path} \
@@ -29,7 +29,7 @@ torchrun --nnodes=${node} --nproc_per_node=${node_num} --master_port=10211 train
     --wandb_project seer \
     --weight_decay 1e-4 \
     --num_resampler_query 6 \
-    --run_name finetune_calvin_abc_d \
+    --run_name finetune_calvin_abc_d_ep5 \
     --save_checkpoint_path ${save_checkpoint_path} \
     --transformer_layers 24 \
     --phase "finetune" \

@@ -240,6 +240,22 @@ class SeerAgent(nn.Module):
             nn.Linear(MLP_hidden_dim, 1),
             torch.nn.Sigmoid(),
         )
+
+        self.recon_state_decoder = nn.Sequential(
+            nn.Linear(self.hidden_dim, MLP_hidden_dim),
+            nn.ReLU(),
+            nn.Linear(MLP_hidden_dim, MLP_hidden_dim),
+            nn.ReLU(),
+        ) # not used
+        self.recon_arm_state_decoder = nn.Sequential(
+            nn.Linear(MLP_hidden_dim, 6),
+            torch.nn.Tanh(),
+        ) # not used
+        self.recon_gripper_state_decoder = nn.Sequential(
+            nn.Linear(MLP_hidden_dim, 1),
+            torch.nn.Sigmoid(),
+        ) # not used
+
         self.IMAGE_DECODER_hidden_dim = self.hidden_dim
         self.NUM_MASK_TOKEN = int(calvin_input_image_size**2 / patch_size / patch_size)  # i.e. num_patch
         self.PATCH_SIZE = patch_size

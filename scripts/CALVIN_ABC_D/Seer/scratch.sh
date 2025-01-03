@@ -26,7 +26,7 @@ torchrun --nnodes=${node} --nproc_per_node=${node_num} --master_port=10211 train
     --wandb_project seer \
     --weight_decay 1e-4 \
     --num_resampler_query 6 \
-    --run_name scratch_calvin_abc_d \
+    --run_name scratch_seer_calvin_abc_d \
     --save_checkpoint \
     --save_checkpoint_path ${save_checkpoint_path} \
     --transformer_layers 24 \
