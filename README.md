@@ -75,10 +75,10 @@ All assets and code are under the [Apache 2.0 license](./LICENSE) unless specifi
 ## Citation <a name="citation"></a>
 If you find the project helpful for your research, please consider citing our paper:
 ```bibtex
-@article{tian2024seer,
+@article{tian2024predictive,
   title={Predictive Inverse Dynamics Models are Scalable Learners for Robotic Manipulation},
   author={Tian, Yang and Yang, Sizhe and Zeng, Jia and Wang, Ping and Lin, Dahua and Dong, Hao and Pang, Jiangmiao},
-  journal={https://arxiv.org/abs/2412.15109},
+  journal={arXiv preprint arXiv:2412.15109},
   year={2024}
 }
 ```
