@@ -26,8 +26,7 @@ class SeerController:
         device_id = init_distributed_device(args)
         args.device_id = device_id
         self.random_seed(args.seed)
-        self.args = args 
-        self.diffusion_cfg = diffusion_cfg 
+        self.args = args  
         self.device_id = args.device_id
 
         # setup model
