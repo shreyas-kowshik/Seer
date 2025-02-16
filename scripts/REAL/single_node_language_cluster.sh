@@ -15,8 +15,8 @@ vit_checkpoint_path="xxx/mae_pretrain_vit_base.pth" # downloaded from https://dr
 #       - shape_info.h5
 ### EXAMPLE ###
 
-node=1
-node_num=1
+node=4
+node_num=8
 torchrun --nnodes=${node} --nproc_per_node=${node_num} --master_port=62345 train.py \
     --traj_cons \
     --rgb_pad 10 \
