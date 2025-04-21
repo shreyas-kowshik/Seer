@@ -7,6 +7,7 @@ Preparation
 cd ${YOUR_PATH_TO_SEER}
 conda activate seer
 ```
+
 ## Pre-train (DROID FULL)
 * For single-node pre-training:
 ```bash
@@ -27,6 +28,11 @@ bash scripts/REAL/slurm_s_language_cluster.sh
 ```
 ## Pre-train (OXE)
 * For multi-node pre-training:
+We should first generate data info
+```bash
+use the oxe_dataset_info in Seer/utils/real_ft_data.py
+```
+Then we train the model
 ```bash
 bash scripts/REAL/slurm_s_language_cluster.sh
 ```

@@ -157,3 +157,154 @@ def make_aug_short_real_dataset_info(
     json_string = json.dumps(data_list, indent=1)
     with open(save_json_path, 'w') as json_file:
         json_file.write(json_string)
+
+
+def oxe_dataset_info():
+    dataset_names = [
+        # {
+        # "dataset_name": f"bridge_dataset",
+        # "wrist_image": "Normal",
+        # "s_ratio": 1.0,
+        # }, # zheng
+
+        # {
+        # "dataset_name": f"cmu_stretch",
+        # "wrist_image": "Normal",
+        # "s_ratio": 1.0,
+        # }, # zheng
+
+        {
+        "dataset_name": f"fractal20220817_data",
+        "wrist_image": "Normal",
+        "s_ratio": 0.54087122203,
+        }, # zheng ###
+
+        # {
+        # "dataset_name": f"dlr_edan_shared_control_converted_externally_to_rlds",
+        # "wrist_image": "Normal",
+        # "s_ratio": 1.0,
+        # }, # zheng
+
+        # {
+        # "dataset_name": f"kuka",
+        # "wrist_image": "Normal",
+        # "s_ratio": 0.8341046294,
+        # }, # zheng ###
+
+        # {
+        # "dataset_name": f"roboturk",
+        # "wrist_image": "Normal",
+        # "s_ratio": 1.0,
+        # }, # zheng
+
+        # {
+        # "dataset_name": f"ucsd_kitchen_dataset_converted_externally_to_rlds",
+        # "wrist_image": "Normal",
+        # "s_ratio": 1.0,
+        # }, # zheng
+
+        # {
+        # "dataset_name" : f"berkeley_autolab_ur5", 
+        # "wrist_image": "Flip vertically & horizontally", 
+        # "s_ratio": 1.0,
+        # }, # fan, 
+        
+        # {
+        # "dataset_name" : f"berkeley_fanuc_manipulation", 
+        # "wrist_image": "Flip vertically & horizontally",
+        # "s_ratio": 1.0,
+        # }, # fan
+
+        # {
+        # "dataset_name" : f"jaco_play", 
+        # "wrist_image": "Flip vertically & horizontally",
+        # "s_ratio": 1.0,
+        # }, # fan
+        
+        # {
+        # "dataset_name" : f"iamlab_cmu_pickup_insert_converted_externally_to_rlds", 
+        # "wrist_image": "Normal",
+        # "s_ratio": 1.0,
+        # }, # zheng
+        
+        # {
+        # "dataset_name" : f"viola", 
+        # "wrist_image": "Flip vertically & horizontally",
+        # "s_ratio": 2.0,
+        # }, # fan
+        
+        # {
+        # "dataset_name" : f"stanford_hydra_dataset_converted_externally_to_rlds", 
+        # "wrist_image": "Flip vertically & horizontally",
+        # "s_ratio": 2.0,
+        # }, # fan
+        
+        # {
+        # "dataset_name" : f"austin_buds_dataset_converted_externally_to_rlds", 
+        # "wrist_image": "Flip vertically & horizontally",
+        # "s_ratio": 1.0,
+        # }, # fan
+        
+        # {
+        # "dataset_name" : f"utaustin_mutex", 
+        # "wrist_image": "Normal",
+        # "s_ratio": 1.0,
+        # }, # zheng
+        
+        # {
+        # "dataset_name" : f"taco_play", 
+        # "wrist_image": "Flip vertically & horizontally",
+        # "s_ratio": 2.0,
+        # }, # fan
+        
+        # {
+        # "dataset_name" : f"austin_sailor_dataset_converted_externally_to_rlds", 
+        # "wrist_image": "Flip vertically & horizontally",
+        # "s_ratio": 1.0,
+        # }, # fan
+        
+        # {
+        # "dataset_name" : f"austin_sirius_dataset_converted_externally_to_rlds", 
+        # "wrist_image": "Flip vertically & horizontally",
+        # "s_ratio": 1.0,
+        # }, # fan
+        
+        # {
+        # "dataset_name" : f"furniture_bench_dataset_converted_externally_to_rlds", 
+        # "wrist_image": "Normal",
+        # "s_ratio": 0.1,
+        # }, # zheng        
+    ]
+
+    # total_data_list = []
+
+    for info in tqdm(dataset_names):
+        dataset_name = info["dataset_name"]
+        wrist_image_info = info["wrist_image"]
+        s_ratio = info["s_ratio"]
+        root_path = f"/xxx/preprocess/oxe/{dataset_name}"
+        save_json_path = f"/xxx/data_info/{dataset_name}.json"
+        root_path_list = glob.glob(os.path.join(root_path, "*", "*"))
+        root_path_list.sort()
+        data_list = []
+        data_list.append(info)
+        accumulated_num_steps = 0
+        for this_path in tqdm(root_path_list):
+            exp_id = this_path.split('/')[-2]
+            demo_id = this_path.split('/')[-1]
+            num_step = len(glob.glob(os.path.join(this_path, "steps", "*")))
+            if s_ratio >= 1.0:
+                for _ in range(int(s_ratio)):
+                    accumulated_num_steps += num_step
+                    data_list.append([exp_id+'/'+demo_id, num_step])
+            else:
+                this_p = np.random.random()
+                if this_p < s_ratio:
+                    accumulated_num_steps += num_step
+                    data_list.append([exp_id+'/'+demo_id, num_step])
+        
+        data_list[0]["accumulated_num_steps"] = accumulated_num_steps
+        json_string = json.dumps(data_list, indent=1)
+        with open(save_json_path, 'w') as json_file:
+            json_file.write(json_string)
+
