@@ -5,7 +5,7 @@ calvin_conf_path="calvin/calvin_models/conf"
 vit_checkpoint_path="checkpoints/vit_mae/mae_pretrain_vit_base.pth" # downloaded from https://drive.google.com/file/d/1bSsvRI4mDM3Gg51C6xO0l9CbojYw3OEt/view?usp=sharing
 save_checkpoint_path="checkpoints/"
 ### NEED TO CHANGE the checkpoint path ###
-resume_from_checkpoint="checkpoints/xxx/xx.pth"
+resume_from_checkpoint="checkpoints/xxx/xxx.pth"
 
 
 IFS='/' read -ra path_parts <<< "$resume_from_checkpoint"
@@ -17,7 +17,7 @@ log_file="eval_logs/$run_name/evaluate_$log_name.log"
 node=1
 node_num=8
 
-torchrun --nnodes=${node} --nproc_per_node=${node_num} --master_port=10211 eval_calvin.py\
+torchrun --nnodes=${node} --nproc_per_node=${node_num} --master_port=10212 eval_calvin.py\
     --traj_cons \
     --rgb_pad 10 \
     --gripper_pad 4 \

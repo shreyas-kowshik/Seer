@@ -267,6 +267,8 @@ def rollout(env, model, task_oracle, subtask, val_annotations, plans, debug, eva
 
     return False
 
+import pdb
+
 def eval_one_epoch_calvin_ddp(args, model, dataset_path, image_processor, tokenizer, eval_log_dir=None, debug=False, future_act_len=-1, reset=False, diverse_inst=False):
     env = make_env(dataset_path)
     cast_dtype = get_cast_dtype(args.precision)

@@ -100,6 +100,7 @@ class SeerController:
             action_pred_steps=self.args.action_pred_steps,
             obs_pred=self.args.obs_pred,
             atten_only_obs=self.args.atten_only_obs,
+            attn_robot_proprio_state=self.args.attn_robot_proprio_state,
             atten_goal=self.args.atten_goal,
             atten_goal_state=self.args.atten_goal_state,
             mask_l_obs_ratio=self.args.mask_l_obs_ratio,

@@ -3,10 +3,15 @@
 calvin_dataset_path="calvin/dataset/task_ABC_D"
 save_checkpoint_path="checkpoints/"
 vit_checkpoint_path="checkpoints/vit_mae/mae_pretrain_vit_base.pth" # downloaded from https://drive.google.com/file/d/1bSsvRI4mDM3Gg51C6xO0l9CbojYw3OEt/view?usp=sharing
-node=8
+# node=8
 node_num=8
-
-torchrun --nnodes=${node} --nproc_per_node=${node_num} --master_port=10211 train.py \
+torchrun \
+    --nnodes=${MLP_WORKER_NUM} \
+    --node_rank=${MLP_ROLE_INDEX} \
+    --nproc_per_node=${node_num} \
+    --master_addr=${MLP_WORKER_0_HOST} \
+    --master_port=${MLP_WORKER_0_PORT} \
+    train.py \
     --traj_cons \
     --rgb_pad 10 \
     --gripper_pad 4 \
@@ -27,7 +32,7 @@ torchrun --nnodes=${node} --nproc_per_node=${node_num} --master_port=10211 train
     --weight_decay 1e-4 \
     --num_resampler_query 16 \
     --num_obs_token_per_image 16 \
-    --run_name pretrain_Seer-Large_calvin_abc_d \
+    --run_name pretrain_Seer-Large \
     --save_checkpoint_path ${save_checkpoint_path} \
     --transformer_layers 24 \
     --hidden_dim 1024 \

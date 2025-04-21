@@ -65,7 +65,7 @@ Relevant checkpoints are available on the [website](https://drive.google.com/dri
 - [x] Release real-world expriment code. 
 - [x] Release CALVIN ABC-D experiment code (Seer).
 - [x] Release the evaluation code of Seer-Large on CALVIN ABC-D experiment.
-- [ ] Release the training code of Seer-Large on CALVIN ABC-D experiment (Reviewing the code).
+- [x] Release the training code of Seer-Large on CALVIN ABC-D experiment.
 - [ ] Release LIBERO-LONG experiment code.
 
 ## License <a name="license"></a>
