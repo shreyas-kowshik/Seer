@@ -39,6 +39,9 @@ Follow the specific instructions for a seamless setup.
 #### CALVIN ABC-D <a name="calvin abc-d"></a>
 - [Installation](docs/CALVIN_ABC-D_INSTALL.md)
 - [Running Code](docs/CALVIN_ABC-D_RUN.md)
+#### LIBERO LONG <a name="libero long"></a>
+- [Installation](docs/LIBERO_LONG_INSTALL.md)
+- [Running Code](docs/LIBERO_LONG_RUN.md)
 ### Real-World<a name="real-world"></a>
 #### Real-World (Quick Training w & w/o pre-training)<a name="real-world-qs"></a>
 For users aiming to train Seer from scratch or fine-tune it, we provide comprehensive instructions for environment setup, downstream task data preparation, training, and deployment.
@@ -66,7 +69,8 @@ Relevant checkpoints are available on the [website](https://drive.google.com/dri
 - [x] Release CALVIN ABC-D experiment code (Seer).
 - [x] Release the evaluation code of Seer-Large on CALVIN ABC-D experiment.
 - [x] Release the training code of Seer-Large on CALVIN ABC-D experiment.
-- [ ] Release LIBERO-LONG experiment code.
+- [x] Release LIBERO-LONG experiment code.
+- [ ] Release simpleseer, a quick scratch training & deploying code.
 
 ## License <a name="license"></a>
 
