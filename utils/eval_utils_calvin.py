@@ -71,6 +71,40 @@ def unpatchify(x, patch_size=16):
     
     return imgs
 
+def image_pred_tensor2img(x, img_id=0, seq_id=-1):
+    """
+    Converts the predicted image tensor to an actual image for visualization
+
+    x: (seq_len, num_images, patch_size**2 * 3)
+    img_id: Which of `num_images` to convert
+    seq_id: Which of `seq_len` to convert
+    """
+    # Code for visualizing predicted image #
+    single_prediction = x.cpu()[seq_id, img_id, :, :][np.newaxis, ...] # Take the last timestep
+    reconstructed_image = unpatchify(single_prediction)
+    image_to_show = reconstructed_image.squeeze(0)
+    min_val = np.min(image_to_show)
+    max_val = np.max(image_to_show)
+    image_to_show = (image_to_show - min_val) / (max_val - min_val)
+    image_to_show = image_to_show.transpose(1, 2, 0)
+    image_to_show = (image_to_show * 255).astype(np.uint8)
+    ######
+
+    return image_to_show
+
+def update_append_dict_with_info_dict(append_dict, info_dict):
+    """
+    info_dict: A Dictionary object storing keys and values
+    append_dict: A Dictionary object that appends value of each key in `info_dict` to the same key 
+    """
+    for (k, v) in info_dict.items():
+        if k not in append_dict:
+            append_dict[k] = []
+        append_dict[k].append(v)
+
+def flatten(arrays):
+    return [item for sublist in arrays for item in sublist]
+
 class ModelWrapper(CalvinBaseModel):
     def __init__(self, model, tokenizer, image_processor, cast_dtype, history_len=10, 
                 calvin_eval_max_steps=360, action_pred_steps=3):
@@ -101,6 +135,8 @@ class ModelWrapper(CalvinBaseModel):
         self.act_queue = deque(maxlen=self.history_len-1)
 
     def step(self, obs, goal, timestep, return_pred_img=False):
+        out_dict = {} # Stores stuff to store in output
+
         image = obs["rgb_obs"]['rgb_static']
         image = Image.fromarray(image)
         image_x = self.image_process_fn([image])
@@ -153,19 +189,11 @@ class ModelWrapper(CalvinBaseModel):
                 action=torch.zeros(1, self.history_len, 7).to(input_state.device),
             )
 
-            # breakpoint()
-            # Code for visualizing predicted image #
-            single_prediction = image_pred.cpu()[-1, 1, :, :][np.newaxis, ...] # Take the last timestep
-            reconstructed_image = unpatchify(single_prediction)
-            image_to_show = reconstructed_image.squeeze(0)
-            min_val = np.min(image_to_show)
-            max_val = np.max(image_to_show)
-            image_to_show = (image_to_show - min_val) / (max_val - min_val)
-            image_to_show = image_to_show.transpose(1, 2, 0)
-            image_to_show = (image_to_show * 255).astype(np.uint8)
-            ######
-            # breakpoint()
-
+            # Convert predicted images for visualization
+            image_pred0_1 = image_pred_tensor2img(image_pred, 0, -1)
+            image_pred1_1 = image_pred_tensor2img(image_pred, 1, -1)
+            image_pred00 = image_pred_tensor2img(image_pred, 0, 0)
+            image_pred10 = image_pred_tensor2img(image_pred, 1, 0)
             
             action = torch.concat((arm_action[0, :, 0, :], gripper_action[0, :, 0, :] > 0.5), dim=-1)
             action[:, -1] = (action[:, -1] - 0.5) * 2  # scale to -1 or 1
@@ -174,11 +202,15 @@ class ModelWrapper(CalvinBaseModel):
                 action = action[num_step - 1]
             else:
                 action = action[-1]
-        
-        if return_pred_img:
-            return action, image_to_show
-        
-        return action
+            
+            # Populate out_dict
+            out_dict['action'] = action
+            out_dict['image_pred0_1'] = image_pred0_1
+            out_dict['image_pred1_1'] = image_pred1_1
+            out_dict['image_pred00'] = image_pred00
+            out_dict['image_pred10'] = image_pred10
+
+        return out_dict
 
 def evaluate_policy_ddp(model, env, epoch, calvin_conf_path, eval_log_dir=None, debug=False, create_plan_tsne=False, reset=False, diverse_inst=False, custom_eval_sequences=None):
     """
@@ -260,8 +292,19 @@ def evaluate_policy_ddp(model, env, epoch, calvin_conf_path, eval_log_dir=None, 
 
     return results
 
-def save_gif_from_image_array():
-    pass
+def get_gif_folder(custom_eval_sequences, eval_log_dir):
+    task_name = custom_eval_sequences.split('/')[-1].split('.')[0]
+    # Create a folder to save the GIFs for the custom set of sequences
+    gif_folder = os.path.join(eval_log_dir, task_name)
+    return gif_folder
+
+def save_gif_from_image_array(images_array, custom_eval_sequences, eval_log_dir, main_name='', append_name='', fps=25):
+    task_name = custom_eval_sequences.split('/')[-1].split('.')[0]
+    # Create a folder to save the GIFs for the custom set of sequences
+    gif_folder = os.path.join(eval_log_dir, task_name)
+    os.makedirs(gif_folder, exist_ok=True)
+    gif_path = os.path.join(gif_folder, f"{main_name}_{append_name}.gif")
+    imageio.mimsave(gif_path, images_array, fps=fps)
 
 def evaluate_sequence(env, model, task_checker, initial_state, eval_sequence, val_annotations, plans, debug, eval_log_dir='', sequence_i=-1, reset=False, diverse_inst=False, custom_eval_sequences=None, save_success_gifs=True):
     """
@@ -274,80 +317,45 @@ def evaluate_sequence(env, model, task_checker, initial_state, eval_sequence, va
     robot_obs, scene_obs = get_env_state_for_initial_condition(initial_state)
     env.reset(robot_obs=robot_obs, scene_obs=scene_obs)
     success_counter = 0
+    gif_keys = ['image_pred0_1', 'image_pred1_1', 'image_pred00', 'image_pred10', 'env_render_image'] # Create gifs for these keys
 
-    # Main Loop #
-    task_rgb_images = []
-    task_model_image_pred_images = []
+    eval_sequence_out_dict = {} # Collates keys for entire `eval_sequence` across subtasks
     for subtask_i, subtask in enumerate(eval_sequence):        
         if reset:
-            success, rgb_images, model_image_preds = rollout(env, model, task_checker, subtask, val_annotations, plans, debug, eval_log_dir, subtask_i, sequence_i, diverse_inst=diverse_inst, robot_obs=robot_obs, scene_obs=scene_obs, custom_eval_sequences=custom_eval_sequences)
+            success, episode_out_dict = rollout(env, model, task_checker, subtask, val_annotations, plans, debug, eval_log_dir, subtask_i, sequence_i, diverse_inst=diverse_inst, robot_obs=robot_obs, scene_obs=scene_obs, custom_eval_sequences=custom_eval_sequences)
         else:
-            success, rgb_images, model_image_preds = rollout(env, model, task_checker, subtask, val_annotations, plans, debug, eval_log_dir, subtask_i, sequence_i, diverse_inst=diverse_inst, custom_eval_sequences=custom_eval_sequences)
+            success, episode_out_dict = rollout(env, model, task_checker, subtask, val_annotations, plans, debug, eval_log_dir, subtask_i, sequence_i, diverse_inst=diverse_inst, custom_eval_sequences=custom_eval_sequences)
         
-        # breakpoint()
-        
-        if rgb_images is not None:
-            task_rgb_images.extend(rgb_images)
-        
-        if len(model_image_preds) > 0:
-            task_model_image_pred_images.extend(model_image_preds)
+        # Update `out_dict_eval_sequence` with `episode_out_dict` keys and values
+        update_append_dict_with_info_dict(eval_sequence_out_dict, episode_out_dict)
         
         if success:
             success_counter += 1
         else:
-            # Save GIFs only for failure cases
-            if len(task_rgb_images) > 0:
-                gif_images = []
-                for img in task_rgb_images:
-                    gif_images.append(img)
-                
-                task_name = custom_eval_sequences.split('/')[-1].split('.')[0]
-                # Create a folder to save the GIFs for the custom set of sequences
-                gif_folder = os.path.join(eval_log_dir, task_name)
-                os.makedirs(gif_folder, exist_ok=True)
-                gif_path = os.path.join(gif_folder, f"{sequence_i}_{subtask}_failure.gif")
-                imageio.mimsave(gif_path, gif_images, fps=25)
-            
-            # Save model image predictions
-            if len(task_model_image_pred_images) > 0:
-                gif_images = []
-                for img in task_model_image_pred_images:
-                    gif_images.append(img)
-                
-                task_name = custom_eval_sequences.split('/')[-1].split('.')[0]
-                # Create a folder to save the GIFs for the custom set of sequences
-                gif_folder = os.path.join(eval_log_dir, task_name)
-                os.makedirs(gif_folder, exist_ok=True)
-                gif_path = os.path.join(gif_folder, f"{sequence_i}_{subtask}_model_image0_predictions.gif")
-                imageio.mimsave(gif_path, gif_images, fps=25)
-            
+            # Flatten `eval_sequence_out_dict`
+            for k in eval_sequence_out_dict.keys():
+                eval_sequence_out_dict[k] = flatten(eval_sequence_out_dict[k])
+            # Save GIFs
+            for gif_key in gif_keys:
+                save_gif_from_image_array(eval_sequence_out_dict[gif_key], custom_eval_sequences, eval_log_dir, main_name="{}_{}_{}".format(sequence_i, subtask, gif_key), append_name='failure', fps=25)
+
+            # Save initial state and eval_sequence to files #
+            gif_folder = get_gif_folder(custom_eval_sequences, eval_log_dir)
+            json.dump(initial_state, open(os.path.join(gif_folder, "{}_initial_state.json".format(sequence_i)), "w"))
+            json.dump(eval_sequence, open(os.path.join(gif_folder, "{}_eval_sequence.json".format(sequence_i)), "w"))
+
             return success_counter
-    
-    # Save model image predictions
-    if len(task_model_image_pred_images) > 0:
-        gif_images = []
-        for img in task_model_image_pred_images:
-            gif_images.append(img)
-        
-        task_name = custom_eval_sequences.split('/')[-1].split('.')[0]
-        # Create a folder to save the GIFs for the custom set of sequences
-        gif_folder = os.path.join(eval_log_dir, task_name)
-        os.makedirs(gif_folder, exist_ok=True)
-        gif_path = os.path.join(gif_folder, f"{sequence_i}_{subtask}_model_image0_predictions.gif")
-        imageio.mimsave(gif_path, gif_images, fps=25)
-    
-    if save_success_gifs:
-        if len(task_rgb_images) > 0:
-            gif_images = []
-            for img in task_rgb_images:
-                gif_images.append(img)
-            
-            task_name = custom_eval_sequences.split('/')[-1].split('.')[0]
-            # Create a folder to save the GIFs for the custom set of sequences
-            gif_folder = os.path.join(eval_log_dir, task_name)
-            os.makedirs(gif_folder, exist_ok=True)
-            gif_path = os.path.join(gif_folder, f"{sequence_i}_success.gif")
-            imageio.mimsave(gif_path, gif_images, fps=25)
+
+    # Flatten `eval_sequence_out_dict`
+    for k in eval_sequence_out_dict.keys():
+        eval_sequence_out_dict[k] = flatten(eval_sequence_out_dict[k])
+    # Save GIFs
+    for gif_key in gif_keys:
+        save_gif_from_image_array(eval_sequence_out_dict[gif_key], custom_eval_sequences, eval_log_dir, main_name="{}_{}_{}".format(sequence_i, subtask, gif_key), append_name='success', fps=25)
+    # Save initial state and eval_sequence to files #
+    gif_folder = get_gif_folder(custom_eval_sequences, eval_log_dir)
+    json.dump(initial_state, open(os.path.join(gif_folder, "{}_initial_state.json".format(sequence_i)), "w"))
+    json.dump(eval_sequence, open(os.path.join(gif_folder, "{}_eval_sequence.json".format(sequence_i)), "w"))
     
     return success_counter
 
@@ -358,21 +366,8 @@ def rollout(env, model, task_oracle, subtask, val_annotations, plans, debug, eva
     subtask: Current language subtask
     """
     planned_actions = []
-
-    # If `custom_eval_sequences` is not None, then we are evaluating a custom set of sequences
-    # In this case we save the GIFs for the custom set of sequences during the rollout
-    # Get task name from the custom eval sequences file
-    rgb_images = None
-    model_image_preds = None
-    if custom_eval_sequences is not None:
-        task_name = custom_eval_sequences.split('/')[-1].split('.')[0]
-        # Create a folder to save the GIFs for the custom set of sequences
-        gif_folder = os.path.join(eval_log_dir, task_name)
-        os.makedirs(gif_folder, exist_ok=True)
-        # Create an empty array to append rgb images to write to GIF
-        rgb_images = []
-        model_image_preds = []
     
+    episode_out_dict = {} # Stores tensors for entire episode
 
     if robot_obs is not None and scene_obs is not None:
         env.reset(robot_obs=robot_obs, scene_obs=scene_obs)
@@ -389,11 +384,8 @@ def rollout(env, model, task_oracle, subtask, val_annotations, plans, debug, eva
     start_info = env.get_info()
 
     for step in range(EP_LEN):
-        if RETURN_IMAGE_PRED_MODEL:
-            action, model_pred = model.step(obs, lang_annotation, step, return_pred_img=True)
-            model_image_preds.append(model_pred)
-        else:
-            action = model.step(obs, lang_annotation, step)
+        out_dict = model.step(obs, lang_annotation, step)
+        action = out_dict['action']
         
         if len(planned_actions) == 0:
             if action.shape == (7,):
@@ -405,18 +397,21 @@ def rollout(env, model, task_oracle, subtask, val_annotations, plans, debug, eva
         if custom_eval_sequences is not None:
             # Get rgb observation of the current step
             rgb = env.render(mode="rgb_array")[:,:,::-1]
-            rgb_images.append(rgb)
+            out_dict['env_render_image'] = rgb
 
         obs, _, _, current_info = env.step(action)
+
+        # Update episode_dict
+        update_append_dict_with_info_dict(episode_out_dict, out_dict)
         
         if step == 0:
             collect_plan(model, plans, subtask)
         # check if current step solves a task
         current_task_info = task_oracle.get_task_info_for_set(start_info, current_info, {subtask})
         if len(current_task_info) > 0:
-            return True, rgb_images, model_image_preds
+            return True, episode_out_dict
     
-    return False, rgb_images, model_image_preds
+    return False, episode_out_dict
 
 import pdb
 

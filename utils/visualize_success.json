@@ -36,5 +36,24 @@
             "push_pink_block_right",
             "move_slider_left"
         ]
+    ],
+    [
+        {
+            "led": 1,
+            "lightbulb": 1,
+            "slider": "left",
+            "drawer": "open",
+            "red_block": "table",
+            "blue_block": "slider_left",
+            "pink_block": "table",
+            "grasped": 0
+        },
+        [
+            "turn_off_led",
+            "push_pink_block_right",
+            "lift_red_block_table",
+            "place_in_drawer",
+            "close_drawer"
+        ]
     ]
 ]
