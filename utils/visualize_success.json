@@ -1,0 +1,40 @@
+[
+    [
+        {
+            "led": 0,
+            "lightbulb": 0,
+            "slider": "left",
+            "drawer": "open",
+            "red_block": "table",
+            "blue_block": "slider_right",
+            "pink_block": "table",
+            "grasped": 0
+        },
+        [
+            "push_pink_block_right",
+            "lift_pink_block_table",
+            "place_in_slider",
+            "push_into_drawer",
+            "close_drawer"
+        ]
+    ],
+    [
+        {
+            "led": 1,
+            "lightbulb": 0,
+            "slider": "right",
+            "drawer": "open",
+            "red_block": "table",
+            "blue_block": "slider_left",
+            "pink_block": "table",
+            "grasped": 0
+        },
+        [
+            "lift_blue_block_slider",
+            "place_in_slider",
+            "close_drawer",
+            "push_pink_block_right",
+            "move_slider_left"
+        ]
+    ]
+]

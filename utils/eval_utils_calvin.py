@@ -9,6 +9,7 @@ import copy
 from collections import deque
 from moviepy.editor import ImageSequenceClip
 import imageio
+import matplotlib.pyplot as plt
 
 sys.path.append('/home/skowshik/work/calvin/calvin_models')
 from calvin_agent.models.calvin_base_model import CalvinBaseModel
@@ -43,12 +44,32 @@ logger = logging.getLogger(__name__)
 
 EP_LEN = 360
 NUM_SEQUENCES = 1000
+RETURN_IMAGE_PRED_MODEL = True
 
 def make_env(dataset_path):
     val_folder = Path(dataset_path) / "validation"
     env = get_env(val_folder, show_gui=False)
 
     return env
+
+def unpatchify(x, patch_size=16):
+    """
+    x: (N, L, patch_size**2 * 3)
+    imgs: (N, 3, H, W)
+    """
+    # Calculate h and w from the number of patches (L)
+    h = w = int(x.shape[1]**0.5)
+    
+    # Reshape to (N, h, w, patch_size, patch_size, 3)
+    x = x.reshape(x.shape[0], h, w, patch_size, patch_size, 3)
+    
+    # Rearrange the dimensions to (N, 3, h, patch_size, w, patch_size)
+    x = np.einsum('nhwpqc->nchpwq', x)
+    
+    # Reshape to the image format (N, 3, H, W)
+    imgs = x.reshape(x.shape[0], 3, h * patch_size, w * patch_size)
+    
+    return imgs
 
 class ModelWrapper(CalvinBaseModel):
     def __init__(self, model, tokenizer, image_processor, cast_dtype, history_len=10, 
@@ -79,7 +100,7 @@ class ModelWrapper(CalvinBaseModel):
         self.text_queue = deque(maxlen=self.history_len)
         self.act_queue = deque(maxlen=self.history_len-1)
 
-    def step(self, obs, goal, timestep):
+    def step(self, obs, goal, timestep, return_pred_img=False):
         image = obs["rgb_obs"]['rgb_static']
         image = Image.fromarray(image)
         image_x = self.image_process_fn([image])
@@ -131,6 +152,21 @@ class ModelWrapper(CalvinBaseModel):
                 text_token=input_text_token,
                 action=torch.zeros(1, self.history_len, 7).to(input_state.device),
             )
+
+            # breakpoint()
+            # Code for visualizing predicted image #
+            single_prediction = image_pred.cpu()[-1, 1, :, :][np.newaxis, ...] # Take the last timestep
+            reconstructed_image = unpatchify(single_prediction)
+            image_to_show = reconstructed_image.squeeze(0)
+            min_val = np.min(image_to_show)
+            max_val = np.max(image_to_show)
+            image_to_show = (image_to_show - min_val) / (max_val - min_val)
+            image_to_show = image_to_show.transpose(1, 2, 0)
+            image_to_show = (image_to_show * 255).astype(np.uint8)
+            ######
+            # breakpoint()
+
+            
             action = torch.concat((arm_action[0, :, 0, :], gripper_action[0, :, 0, :] > 0.5), dim=-1)
             action[:, -1] = (action[:, -1] - 0.5) * 2  # scale to -1 or 1
             action = action.cpu().detach().to(dtype=torch.float16).numpy()
@@ -138,7 +174,10 @@ class ModelWrapper(CalvinBaseModel):
                 action = action[num_step - 1]
             else:
                 action = action[-1]
-                
+        
+        if return_pred_img:
+            return action, image_to_show
+        
         return action
 
 def evaluate_policy_ddp(model, env, epoch, calvin_conf_path, eval_log_dir=None, debug=False, create_plan_tsne=False, reset=False, diverse_inst=False, custom_eval_sequences=None):
@@ -238,16 +277,20 @@ def evaluate_sequence(env, model, task_checker, initial_state, eval_sequence, va
 
     # Main Loop #
     task_rgb_images = []
+    task_model_image_pred_images = []
     for subtask_i, subtask in enumerate(eval_sequence):        
         if reset:
-            success, rgb_images = rollout(env, model, task_checker, subtask, val_annotations, plans, debug, eval_log_dir, subtask_i, sequence_i, diverse_inst=diverse_inst, robot_obs=robot_obs, scene_obs=scene_obs, custom_eval_sequences=custom_eval_sequences)
+            success, rgb_images, model_image_preds = rollout(env, model, task_checker, subtask, val_annotations, plans, debug, eval_log_dir, subtask_i, sequence_i, diverse_inst=diverse_inst, robot_obs=robot_obs, scene_obs=scene_obs, custom_eval_sequences=custom_eval_sequences)
         else:
-            success, rgb_images = rollout(env, model, task_checker, subtask, val_annotations, plans, debug, eval_log_dir, subtask_i, sequence_i, diverse_inst=diverse_inst, custom_eval_sequences=custom_eval_sequences)
+            success, rgb_images, model_image_preds = rollout(env, model, task_checker, subtask, val_annotations, plans, debug, eval_log_dir, subtask_i, sequence_i, diverse_inst=diverse_inst, custom_eval_sequences=custom_eval_sequences)
         
         # breakpoint()
         
         if rgb_images is not None:
             task_rgb_images.extend(rgb_images)
+        
+        if len(model_image_preds) > 0:
+            task_model_image_pred_images.extend(model_image_preds)
         
         if success:
             success_counter += 1
@@ -265,7 +308,33 @@ def evaluate_sequence(env, model, task_checker, initial_state, eval_sequence, va
                 gif_path = os.path.join(gif_folder, f"{sequence_i}_{subtask}_failure.gif")
                 imageio.mimsave(gif_path, gif_images, fps=25)
             
+            # Save model image predictions
+            if len(task_model_image_pred_images) > 0:
+                gif_images = []
+                for img in task_model_image_pred_images:
+                    gif_images.append(img)
+                
+                task_name = custom_eval_sequences.split('/')[-1].split('.')[0]
+                # Create a folder to save the GIFs for the custom set of sequences
+                gif_folder = os.path.join(eval_log_dir, task_name)
+                os.makedirs(gif_folder, exist_ok=True)
+                gif_path = os.path.join(gif_folder, f"{sequence_i}_{subtask}_model_image0_predictions.gif")
+                imageio.mimsave(gif_path, gif_images, fps=25)
+            
             return success_counter
+    
+    # Save model image predictions
+    if len(task_model_image_pred_images) > 0:
+        gif_images = []
+        for img in task_model_image_pred_images:
+            gif_images.append(img)
+        
+        task_name = custom_eval_sequences.split('/')[-1].split('.')[0]
+        # Create a folder to save the GIFs for the custom set of sequences
+        gif_folder = os.path.join(eval_log_dir, task_name)
+        os.makedirs(gif_folder, exist_ok=True)
+        gif_path = os.path.join(gif_folder, f"{sequence_i}_{subtask}_model_image0_predictions.gif")
+        imageio.mimsave(gif_path, gif_images, fps=25)
     
     if save_success_gifs:
         if len(task_rgb_images) > 0:
@@ -294,6 +363,7 @@ def rollout(env, model, task_oracle, subtask, val_annotations, plans, debug, eva
     # In this case we save the GIFs for the custom set of sequences during the rollout
     # Get task name from the custom eval sequences file
     rgb_images = None
+    model_image_preds = None
     if custom_eval_sequences is not None:
         task_name = custom_eval_sequences.split('/')[-1].split('.')[0]
         # Create a folder to save the GIFs for the custom set of sequences
@@ -301,6 +371,7 @@ def rollout(env, model, task_oracle, subtask, val_annotations, plans, debug, eva
         os.makedirs(gif_folder, exist_ok=True)
         # Create an empty array to append rgb images to write to GIF
         rgb_images = []
+        model_image_preds = []
     
 
     if robot_obs is not None and scene_obs is not None:
@@ -318,7 +389,12 @@ def rollout(env, model, task_oracle, subtask, val_annotations, plans, debug, eva
     start_info = env.get_info()
 
     for step in range(EP_LEN):
-        action = model.step(obs, lang_annotation, step)
+        if RETURN_IMAGE_PRED_MODEL:
+            action, model_pred = model.step(obs, lang_annotation, step, return_pred_img=True)
+            model_image_preds.append(model_pred)
+        else:
+            action = model.step(obs, lang_annotation, step)
+        
         if len(planned_actions) == 0:
             if action.shape == (7,):
                 planned_actions.append(action)
@@ -338,9 +414,9 @@ def rollout(env, model, task_oracle, subtask, val_annotations, plans, debug, eva
         # check if current step solves a task
         current_task_info = task_oracle.get_task_info_for_set(start_info, current_info, {subtask})
         if len(current_task_info) > 0:
-            return True, rgb_images
+            return True, rgb_images, model_image_preds
     
-    return False, rgb_images
+    return False, rgb_images, model_image_preds
 
 import pdb
 

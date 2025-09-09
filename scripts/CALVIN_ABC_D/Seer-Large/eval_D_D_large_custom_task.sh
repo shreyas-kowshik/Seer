@@ -48,4 +48,7 @@ torchrun --nnodes=${node} --nproc_per_node=${node_num} --master_port=10212 eval_
     --window_size 13 \
     --obs_pred \
     --resume_from_checkpoint ${resume_from_checkpoint}\
-    --custom_eval_sequences utils/evaluate_sequences_push_pink_block_right.json | tee ${log_file} \
+    --custom_eval_sequences utils/visualize_success.json | tee ${log_file} \
+    # --custom_eval_sequences utils/visualize_custom_sequence.json | tee ${log_file} \
+    # --custom_eval_sequences utils/evaluate_sequences_push_pink_block_right.json | tee ${log_file} \
+    
