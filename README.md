@@ -89,3 +89,14 @@ If you find the project helpful for your research, please consider citing our pa
 
 ## Acknowledgment <a name="acknowledgment"></a>
 This project builds upon [GR-1](https://github.com/bytedance/GR-1) and [Roboflamingo](https://github.com/RoboFlamingo/RoboFlamingo). We thank these teams for their open-source contributions.
+
+
+
+## Custom Utility/Scripts Added
+
+Generate custom evaluation .json file
+`python shreyas_scripts/create_task_eval_json.py --input utils/eval_sequences.json --task_name push_pink_block_right`
+
+Specify custom task .json path and run for GIFs creation and evaluation:
+`bash scripts/CALVIN_ABC_D/Seer-Large/eval_D_D_large_custom_task.sh`
+

@@ -5,6 +5,9 @@ import numpy as np
 import torch
 import wandb
 import clip
+import sys
+sys.path.append('/home/skowshik/work/calvin/calvin_models')
+
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed.elastic.multiprocessing.errors import record
 from models.seer_model import SeerAgent
