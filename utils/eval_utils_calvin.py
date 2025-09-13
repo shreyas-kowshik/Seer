@@ -10,6 +10,7 @@ from collections import deque
 from moviepy.editor import ImageSequenceClip
 import imageio
 import matplotlib.pyplot as plt
+from PIL import Image, ImageDraw, ImageFont
 
 sys.path.append('/home/skowshik/work/calvin/calvin_models')
 from calvin_agent.models.calvin_base_model import CalvinBaseModel
@@ -45,6 +46,25 @@ logger = logging.getLogger(__name__)
 EP_LEN = 360
 NUM_SEQUENCES = 1000
 RETURN_IMAGE_PRED_MODEL = True
+
+# For json dumping
+class NumpyEncoder(json.JSONEncoder):
+    """
+    Special JSON encoder for numpy types.
+    This tells the json.dump function how to serialize non-standard types.
+    """
+    def default(self, obj):
+        # If the object is a numpy integer, convert it to a standard Python int
+        if isinstance(obj, np.integer):
+            return int(obj)
+        # If the object is a numpy float (including float16, float32, etc.), convert it to a standard Python float
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        # If the object is a numpy array, convert it to a Python list
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        # Let the base class default method raise the TypeError for other types
+        return super(NumpyEncoder, self).default(obj)
 
 def make_env(dataset_path):
     val_folder = Path(dataset_path) / "validation"
@@ -237,6 +257,7 @@ def evaluate_policy_ddp(model, env, epoch, calvin_conf_path, eval_log_dir=None, 
             val_annotations = json.load(f)
     else:
         val_annotations = OmegaConf.load(conf_dir / "annotations/new_playtable_validation.yaml")
+    
 
     eval_log_dir = get_log_dir(eval_log_dir)
     if custom_eval_sequences is None:
@@ -298,13 +319,80 @@ def get_gif_folder(custom_eval_sequences, eval_log_dir):
     gif_folder = os.path.join(eval_log_dir, task_name)
     return gif_folder
 
-def save_gif_from_image_array(images_array, custom_eval_sequences, eval_log_dir, main_name='', append_name='', fps=25):
+# def save_gif_from_image_array(images_array, custom_eval_sequences, eval_log_dir, main_name='', append_name='', fps=25):
+#     task_name = custom_eval_sequences.split('/')[-1].split('.')[0]
+#     # Create a folder to save the GIFs for the custom set of sequences
+#     gif_folder = os.path.join(eval_log_dir, task_name)
+#     os.makedirs(gif_folder, exist_ok=True)
+#     gif_path = os.path.join(gif_folder, f"{main_name}_{append_name}.gif")
+#     imageio.mimsave(gif_path, images_array, fps=fps)
+
+def save_gif_from_image_array(images_array, custom_eval_sequences, eval_log_dir, main_name='', append_name='', fps=25, text_array=None):
+    """
+    Saves an array of images as a GIF, with an option to overlay text on each frame.
+
+    Args:
+        images_array (list or np.array): A list of images (as numpy arrays).
+        custom_eval_sequences (str): Path to evaluation sequences to derive task name.
+        eval_log_dir (str): The directory to save the logs and GIF.
+        main_name (str): The main part of the GIF's filename.
+        append_name (str): A string to append to the GIF's filename.
+        fps (int): Frames per second for the GIF.
+        text_array (list of str, optional): A list of strings, one for each frame.
+                                             If provided, text is drawn on each frame.
+                                             Defaults to None.
+    """
     task_name = custom_eval_sequences.split('/')[-1].split('.')[0]
     # Create a folder to save the GIFs for the custom set of sequences
     gif_folder = os.path.join(eval_log_dir, task_name)
     os.makedirs(gif_folder, exist_ok=True)
     gif_path = os.path.join(gif_folder, f"{main_name}_{append_name}.gif")
-    imageio.mimsave(gif_path, images_array, fps=fps)
+
+    images_to_save = []
+
+    if text_array is not None and len(text_array) == len(images_array):
+        # A new array to hold images with text
+        processed_images = []
+        for i, frame_np in enumerate(images_array):
+            # Convert numpy array to PIL Image
+            frame_pil = Image.fromarray(frame_np)
+            draw = ImageDraw.Draw(frame_pil)
+            text = text_array[i]
+
+            # You can load a custom font if you have a .ttf file
+            # font = ImageFont.truetype("arial.ttf", 20)
+            try:
+                font = ImageFont.load_default(size=20)
+            except AttributeError: # Fallback for older Pillow versions
+                 font = ImageFont.load_default()
+
+
+            # --- Draw text with a thin black outline for better visibility ---
+            position = (15, 15)
+            text_color = (255, 255, 255) # White
+            outline_color = (0, 0, 0) # Black
+
+            # Draw outline
+            draw.text((position[0]-1, position[1]-1), text, font=font, fill=outline_color)
+            draw.text((position[0]+1, position[1]-1), text, font=font, fill=outline_color)
+            draw.text((position[0]-1, position[1]+1), text, font=font, fill=outline_color)
+            draw.text((position[0]+1, position[1]+1), text, font=font, fill=outline_color)
+
+            # Draw the main text
+            draw.text(position, text, font=font, fill=text_color)
+
+            # Convert PIL Image back to numpy array and append
+            processed_images.append(np.array(frame_pil))
+
+        images_to_save = processed_images
+    else:
+        # If no text_array is provided, use the original images
+        images_to_save = images_array
+
+    # Save the final array of images (either original or with text) as a GIF
+    imageio.mimsave(gif_path, images_to_save, fps=fps)
+    print(f"GIF saved to: {gif_path}")
+
 
 def evaluate_sequence(env, model, task_checker, initial_state, eval_sequence, val_annotations, plans, debug, eval_log_dir='', sequence_i=-1, reset=False, diverse_inst=False, custom_eval_sequences=None, save_success_gifs=True):
     """
@@ -337,12 +425,18 @@ def evaluate_sequence(env, model, task_checker, initial_state, eval_sequence, va
                 eval_sequence_out_dict[k] = flatten(eval_sequence_out_dict[k])
             # Save GIFs
             for gif_key in gif_keys:
-                save_gif_from_image_array(eval_sequence_out_dict[gif_key], custom_eval_sequences, eval_log_dir, main_name="{}_{}_{}".format(sequence_i, subtask, gif_key), append_name='failure', fps=25)
+                save_gif_from_image_array(eval_sequence_out_dict[gif_key], custom_eval_sequences, eval_log_dir, main_name="{}_{}_{}".format(sequence_i, subtask, gif_key), append_name='failure', fps=25, text_array=eval_sequence_out_dict['image_task'])
 
             # Save initial state and eval_sequence to files #
             gif_folder = get_gif_folder(custom_eval_sequences, eval_log_dir)
             json.dump(initial_state, open(os.path.join(gif_folder, "{}_initial_state.json".format(sequence_i)), "w"))
             json.dump(eval_sequence, open(os.path.join(gif_folder, "{}_eval_sequence.json".format(sequence_i)), "w"))
+
+            # breakpoint()
+            current_infos_dump_arr = []
+            current_infos_dump_arr.append(eval_sequence_out_dict['current_info'][0])
+            current_infos_dump_arr.append(eval_sequence_out_dict['current_info'][-1])
+            json.dump(current_infos_dump_arr, open(os.path.join(gif_folder, "{}_current_infos.json".format(sequence_i)), "w"), indent=4, cls=NumpyEncoder)
 
             return success_counter
 
@@ -351,11 +445,18 @@ def evaluate_sequence(env, model, task_checker, initial_state, eval_sequence, va
         eval_sequence_out_dict[k] = flatten(eval_sequence_out_dict[k])
     # Save GIFs
     for gif_key in gif_keys:
-        save_gif_from_image_array(eval_sequence_out_dict[gif_key], custom_eval_sequences, eval_log_dir, main_name="{}_{}_{}".format(sequence_i, subtask, gif_key), append_name='success', fps=25)
+        save_gif_from_image_array(eval_sequence_out_dict[gif_key], custom_eval_sequences, eval_log_dir, main_name="{}_{}_{}".format(sequence_i, subtask, gif_key), append_name='success', fps=25, text_array=eval_sequence_out_dict['image_task'])
     # Save initial state and eval_sequence to files #
     gif_folder = get_gif_folder(custom_eval_sequences, eval_log_dir)
     json.dump(initial_state, open(os.path.join(gif_folder, "{}_initial_state.json".format(sequence_i)), "w"))
     json.dump(eval_sequence, open(os.path.join(gif_folder, "{}_eval_sequence.json".format(sequence_i)), "w"))
+
+    current_infos_dump_arr = []
+    current_infos_dump_arr.append(eval_sequence_out_dict['current_info'][0])
+    current_infos_dump_arr.append(eval_sequence_out_dict['current_info'][-1])
+    json.dump(current_infos_dump_arr, open(os.path.join(gif_folder, "{}_current_infos.json".format(sequence_i)), "w"), indent=4, cls=NumpyEncoder)
+
+    # breakpoint()
     
     return success_counter
 
@@ -365,6 +466,7 @@ def rollout(env, model, task_oracle, subtask, val_annotations, plans, debug, eva
 
     subtask: Current language subtask
     """
+    # breakpoint()
     planned_actions = []
     
     episode_out_dict = {} # Stores tensors for entire episode
@@ -382,8 +484,11 @@ def rollout(env, model, task_oracle, subtask, val_annotations, plans, debug, eva
         lang_annotation.replace('\u2019', '\'')
     model.reset()
     start_info = env.get_info()
-
+    
+    # DEBUG Info #
+    debug__step = 0
     for step in range(EP_LEN):
+        debug__step = step
         out_dict = model.step(obs, lang_annotation, step)
         action = out_dict['action']
         
@@ -394,23 +499,32 @@ def rollout(env, model, task_oracle, subtask, val_annotations, plans, debug, eva
                 planned_actions.extend([action[i] for i in range(action.shape[0])])
         action = planned_actions.pop(0)
 
+        obs, _, _, current_info = env.step(action)
+
         if custom_eval_sequences is not None:
             # Get rgb observation of the current step
-            rgb = env.render(mode="rgb_array")[:,:,::-1]
+            # rgb = env.render(mode="rgb_array")[:,:,::-1]
+            rgb = env.render(mode="rgb_array")[:,:,:]
             out_dict['env_render_image'] = rgb
-
-        obs, _, _, current_info = env.step(action)
+            out_dict['image_task'] = subtask
+            # Add some other state variables as well
+            out_dict['current_info'] = current_info
 
         # Update episode_dict
         update_append_dict_with_info_dict(episode_out_dict, out_dict)
         
         if step == 0:
             collect_plan(model, plans, subtask)
+
+        # breakpoint()
+
         # check if current step solves a task
         current_task_info = task_oracle.get_task_info_for_set(start_info, current_info, {subtask})
         if len(current_task_info) > 0:
+            # breakpoint()
             return True, episode_out_dict
     
+    # breakpoint()
     return False, episode_out_dict
 
 import pdb
