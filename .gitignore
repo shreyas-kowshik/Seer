@@ -4,6 +4,8 @@ checkpoints
 eval_logs
 evaluate
 *_current_infos.json
+*.err
+*.out
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

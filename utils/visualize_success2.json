@@ -2,8 +2,8 @@
     [
         {
             "led": 1,
-            "lightbulb": 0,
-            "slider": "right",
+            "lightbulb": 1,
+            "slider": "left",
             "drawer": "open",
             "red_block": "table",
             "blue_block": "slider_left",
@@ -11,11 +11,11 @@
             "grasped": 0
         },
         [
-            "lift_blue_block_slider",
-            "place_in_slider",
-            "close_drawer",
+            "turn_off_led",
             "push_pink_block_right",
-            "move_slider_left"
+            "lift_red_block_table",
+            "place_in_drawer",
+            "close_drawer"
         ]
     ]
 ]

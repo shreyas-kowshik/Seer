@@ -412,6 +412,7 @@ def evaluate_sequence(env, model, task_checker, initial_state, eval_sequence, va
         if reset:
             success, episode_out_dict = rollout(env, model, task_checker, subtask, val_annotations, plans, debug, eval_log_dir, subtask_i, sequence_i, diverse_inst=diverse_inst, robot_obs=robot_obs, scene_obs=scene_obs, custom_eval_sequences=custom_eval_sequences)
         else:
+            # breakpoint()
             success, episode_out_dict = rollout(env, model, task_checker, subtask, val_annotations, plans, debug, eval_log_dir, subtask_i, sequence_i, diverse_inst=diverse_inst, custom_eval_sequences=custom_eval_sequences)
         
         # Update `out_dict_eval_sequence` with `episode_out_dict` keys and values
@@ -436,6 +437,7 @@ def evaluate_sequence(env, model, task_checker, initial_state, eval_sequence, va
             current_infos_dump_arr = []
             current_infos_dump_arr.append(eval_sequence_out_dict['current_info'][0])
             current_infos_dump_arr.append(eval_sequence_out_dict['current_info'][-1])
+            # current_infos_dump_arr = eval_sequence_out_dict['current_info']
             json.dump(current_infos_dump_arr, open(os.path.join(gif_folder, "{}_current_infos.json".format(sequence_i)), "w"), indent=4, cls=NumpyEncoder)
 
             return success_counter
@@ -454,6 +456,7 @@ def evaluate_sequence(env, model, task_checker, initial_state, eval_sequence, va
     current_infos_dump_arr = []
     current_infos_dump_arr.append(eval_sequence_out_dict['current_info'][0])
     current_infos_dump_arr.append(eval_sequence_out_dict['current_info'][-1])
+    # current_infos_dump_arr = eval_sequence_out_dict['current_info']
     json.dump(current_infos_dump_arr, open(os.path.join(gif_folder, "{}_current_infos.json".format(sequence_i)), "w"), indent=4, cls=NumpyEncoder)
 
     # breakpoint()
@@ -474,6 +477,8 @@ def rollout(env, model, task_oracle, subtask, val_annotations, plans, debug, eva
     if robot_obs is not None and scene_obs is not None:
         env.reset(robot_obs=robot_obs, scene_obs=scene_obs)
     obs = env.get_obs()
+
+    # breakpoint()
     # get lang annotation for subtask
     if diverse_inst:
         lang_annotation = val_annotations[sequence_i][subtask_i]
