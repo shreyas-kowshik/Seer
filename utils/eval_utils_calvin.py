@@ -154,7 +154,7 @@ class ModelWrapper(CalvinBaseModel):
         self.text_queue = deque(maxlen=self.history_len)
         self.act_queue = deque(maxlen=self.history_len-1)
 
-    def step(self, obs, goal, timestep, return_pred_img=False):
+    def step(self, obs, goal, timestep, return_pred_img=False, return_attention_weights=False, attention_layers=None, attention_heads=None):
         out_dict = {} # Stores stuff to store in output
 
         image = obs["rgb_obs"]['rgb_static']
@@ -201,13 +201,32 @@ class ModelWrapper(CalvinBaseModel):
                 input_image_primary = image_primary
                 input_image_wrist = image_wrist
                 input_state = state
-            arm_action, gripper_action, image_pred, arm_pred_state, gripper_pred_state, _ = self.model(
-                image_primary=input_image_primary,
-                image_wrist=input_image_wrist,
-                state=input_state,
-                text_token=input_text_token,
-                action=torch.zeros(1, self.history_len, 7).to(input_state.device),
-            )
+            if return_attention_weights:
+                arm_action, gripper_action, image_pred, arm_pred_state, gripper_pred_state, _, action_attention_weights = self.model(
+                    image_primary=input_image_primary,
+                    image_wrist=input_image_wrist,
+                    state=input_state,
+                    text_token=input_text_token,
+                    action=torch.zeros(1, self.history_len, 7).to(input_state.device),
+                    return_attention_weights=True,
+                    attention_layers=attention_layers,
+                    attention_heads=attention_heads,
+                )
+                
+                # Force garbage collection and clear GPU cache after attention weights extraction
+                import gc
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            else:
+                arm_action, gripper_action, image_pred, arm_pred_state, gripper_pred_state, _ = self.model(
+                    image_primary=input_image_primary,
+                    image_wrist=input_image_wrist,
+                    state=input_state,
+                    text_token=input_text_token,
+                    action=torch.zeros(1, self.history_len, 7).to(input_state.device),
+                )
+                action_attention_weights = None
 
             # Convert predicted images for visualization
             image_pred0_1 = image_pred_tensor2img(image_pred, 0, -1)
@@ -229,6 +248,8 @@ class ModelWrapper(CalvinBaseModel):
             out_dict['image_pred1_1'] = image_pred1_1
             out_dict['image_pred00'] = image_pred00
             out_dict['image_pred10'] = image_pred10
+            if return_attention_weights:
+                out_dict['action_attention_weights'] = action_attention_weights
 
         return out_dict
 
@@ -421,6 +442,7 @@ def evaluate_sequence(env, model, task_checker, initial_state, eval_sequence, va
         if success:
             success_counter += 1
         else:
+            breakpoint()
             # Flatten `eval_sequence_out_dict`
             for k in eval_sequence_out_dict.keys():
                 eval_sequence_out_dict[k] = flatten(eval_sequence_out_dict[k])
@@ -433,7 +455,6 @@ def evaluate_sequence(env, model, task_checker, initial_state, eval_sequence, va
             json.dump(initial_state, open(os.path.join(gif_folder, "{}_initial_state.json".format(sequence_i)), "w"))
             json.dump(eval_sequence, open(os.path.join(gif_folder, "{}_eval_sequence.json".format(sequence_i)), "w"))
 
-            # breakpoint()
             current_infos_dump_arr = []
             current_infos_dump_arr.append(eval_sequence_out_dict['current_info'][0])
             current_infos_dump_arr.append(eval_sequence_out_dict['current_info'][-1])
@@ -441,7 +462,8 @@ def evaluate_sequence(env, model, task_checker, initial_state, eval_sequence, va
             json.dump(current_infos_dump_arr, open(os.path.join(gif_folder, "{}_current_infos.json".format(sequence_i)), "w"), indent=4, cls=NumpyEncoder)
 
             return success_counter
-
+    
+    breakpoint()
     # Flatten `eval_sequence_out_dict`
     for k in eval_sequence_out_dict.keys():
         eval_sequence_out_dict[k] = flatten(eval_sequence_out_dict[k])
@@ -494,7 +516,12 @@ def rollout(env, model, task_oracle, subtask, val_annotations, plans, debug, eva
     debug__step = 0
     for step in range(EP_LEN):
         debug__step = step
-        out_dict = model.step(obs, lang_annotation, step)
+        # Use memory-efficient attention weight extraction
+        # Extract only last few layers and first few heads to reduce memory usage
+        out_dict = model.step(obs, lang_annotation, step, return_attention_weights=True, 
+                             attention_layers=[-3, -2, -1],  # Only last 3 layers
+                             attention_heads=[0, 1, 2, 3])   # Only first 4 heads
+        # breakpoint()
         action = out_dict['action']
         
         if len(planned_actions) == 0:

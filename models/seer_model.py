@@ -117,26 +117,26 @@ class SeerAgent(nn.Module):
         finetune_type,
         clip_device,
         vit_checkpoint_path,
-        sequence_length=10,
-        num_resampler_query=9,
-        num_obs_token_per_image=10,
-        obs_pred=False,
-        atten_only_obs=False,
-        attn_robot_proprio_state=False,
-        atten_goal=False,
-        atten_goal_state=False,
-        mask_l_obs_ratio=0.0,
-        calvin_input_image_size=224,
-        patch_size=16,
-        mask_ratio=0.0,
-        num_token_per_timestep=41,
-        input_self=False,
-        action_pred_steps=1,
-        transformer_layers=12,
-        hidden_dim=384,
-        transformer_heads=12,
+        sequence_length=10, # 14
+        num_resampler_query=9, # 16
+        num_obs_token_per_image=10, # 16
+        obs_pred=False, # True
+        atten_only_obs=False, # True
+        attn_robot_proprio_state=False, # True
+        atten_goal=False, # 4
+        atten_goal_state=False, # True
+        mask_l_obs_ratio=0.0, # 0.0
+        calvin_input_image_size=224, # 224
+        patch_size=16, # 16
+        mask_ratio=0.0, # 0.0
+        num_token_per_timestep=41, # 41
+        input_self=False, # False
+        action_pred_steps=1, # 3
+        transformer_layers=12, # 24
+        hidden_dim=384, # 1024
+        transformer_heads=12, # 16
         phase="",
-        gripper_width=False,
+        gripper_width=False, # False
     ):
         super().__init__()
         self.finetune_type = finetune_type
@@ -203,6 +203,8 @@ class SeerAgent(nn.Module):
             this_num_obs_token = self.NUM_OBS_TOKEN
         else:
             this_num_obs_token = 0
+        
+        # breakpoint()
         self.attention_mask = nn.Parameter(generate_attention_mask(
                                     K=self.sequence_length, 
                                     num_A=1+1+self.NUM_RESAMPLER_QUERY*2+1*2, 
@@ -215,6 +217,7 @@ class SeerAgent(nn.Module):
                                     num_obs_token=this_num_obs_token,
                                     action_pred_steps=self.action_pred_steps), 
                                     requires_grad=False)
+        # breakpoint()
         num_non_learnable_token_per_timestep = 1+1+self.NUM_RESAMPLER_QUERY*2+1*2
         self.transformer_backbone_position_embedding = nn.Parameter(torch.zeros(1, self.sequence_length, 1, self.hidden_dim), requires_grad=True)  # TODO How to initialize this embedding
         config = GPT2Config()
@@ -311,7 +314,7 @@ class SeerAgent(nn.Module):
         self.action_decoder_type = next(self.action_decoder.parameters()).type()
 
 
-    def forward(self, image_primary, image_wrist, state, text_token, action=None):  
+    def forward(self, image_primary, image_wrist, state, text_token, action=None, return_attention_weights=False, attention_layers=None, attention_heads=None):  
         if self.training and self.phase == "pretrain":
             if self.obs_pred:
                 this_num_obs_token = self.NUM_OBS_TOKEN
@@ -330,6 +333,8 @@ class SeerAgent(nn.Module):
                             num_obs_token=this_num_obs_token,
                             action_pred_steps=self.action_pred_steps).to(self.device), 
                             requires_grad=False)
+        
+        # breakpoint()
         B, S, _ = state.shape
         device = image_primary.device
         S_AND_FUTURE = image_primary.shape[1]
@@ -348,6 +353,7 @@ class SeerAgent(nn.Module):
         # state embedding
         state = state.flatten(0, 1)
         arm_state_feature = self.arm_state_encoder(state[:, :6])
+        # breakpoint()
         if not self.gripper_width:
             gripper_state_one_hot = torch.nn.functional.one_hot(torch.where(state[:, 6:].flatten() < 1, torch.tensor(0).to(device), torch.tensor(1).to(device)), num_classes=2)
             gripper_state_feature = self.gripper_state_encoder(gripper_state_one_hot.type_as(state))
@@ -366,6 +372,8 @@ class SeerAgent(nn.Module):
         if image_primary_feature.type() != self.perceiver_resampler_type:
             image_primary_feature = image_primary_feature.type(self.perceiver_resampler_type)
             image_wrist_feature = image_wrist_feature.type(self.perceiver_resampler_type)
+
+        # breakpoint()
         image_primary_feature = image_primary_feature.view(B, S_AND_FUTURE, image_primary_feature.shape[-2], image_primary_feature.shape[-1])
         image_wrist_feature = image_wrist_feature.view(B, S_AND_FUTURE, image_wrist_feature.shape[-2], image_wrist_feature.shape[-1])
         image_primary_cls_token = image_primary_feature[:, :, :1, :]
@@ -374,10 +382,12 @@ class SeerAgent(nn.Module):
         image_wrist_feature = image_wrist_feature[:, :, 1:, :]
         label_image_primary_feature = image_primary_feature.clone()
         label_image_wrist_feature = image_wrist_feature.clone()
+        # breakpoint()
 
         # perceiver resampler
         image_primary_feature = self.perceiver_resampler(image_primary_feature.reshape(B*S, 196, self.RESAMPLER_hidden_dim).unsqueeze(1).unsqueeze(1))  # mae vit outputs 196 tokens
         image_wrist_feature = self.perceiver_resampler(image_wrist_feature.reshape(B*S, 196, self.RESAMPLER_hidden_dim).unsqueeze(1).unsqueeze(1))
+        # breakpoint()
         image_primary_embedding = self.image_primary_projector(image_primary_feature.flatten(0, 2)).view(B, S, -1, self.hidden_dim)
         image_wrist_embedding = self.image_wrist_projector(image_wrist_feature.flatten(0, 2)).view(B, S, -1, self.hidden_dim)
         image_embedding = torch.cat((image_primary_embedding, image_wrist_embedding), dim=2)
@@ -387,6 +397,7 @@ class SeerAgent(nn.Module):
         
         # aggregate embeddings and add timestep position encoding
         embeddings = torch.cat((text_embedding, state_embedding, image_embedding, image_cls_token_embedding), dim=2)
+        # breakpoint()
         pred_token_start_idx = embeddings.shape[2]
         transformer_input_list = [embeddings]
         if self.obs_pred:
@@ -394,15 +405,32 @@ class SeerAgent(nn.Module):
         if self.action_pred_steps > 0:
             transformer_input_list.append(self.action_pred_token.repeat(B, S, 1, 1))
         transformer_input = torch.cat(transformer_input_list, dim=2)  
+        # breakpoint()
         transformer_input = transformer_input + self.transformer_backbone_position_embedding.repeat(B, 1, transformer_input.shape[-2], 1)
         transformer_input = transformer_input.flatten(1, 2)
+        # breakpoint()
 
         # causal transformer forward
         if transformer_input.type() != self.transformer_backbone_type:
             transformer_input = transformer_input.type(self.transformer_backbone_type)
         transformer_input = self.embedding_layer_norm(transformer_input)
-        transformer_output = self.transformer_backbone(inputs_embeds=transformer_input, attention_mask=self.attention_mask)
+        
+        if return_attention_weights:
+            transformer_output, all_attention_weights = self.transformer_backbone(
+                inputs_embeds=transformer_input, 
+                attention_mask=self.attention_mask,
+                return_attention_weights=return_attention_weights,
+                attention_layers=attention_layers
+            )
+        else:
+            transformer_output = self.transformer_backbone(
+                inputs_embeds=transformer_input, 
+                attention_mask=self.attention_mask
+            )
+            all_attention_weights = None
+            
         transformer_output = transformer_output.view(B, S, -1, self.hidden_dim)
+        # breakpoint()
 
         if self.obs_pred:
             obs_pred_feature = transformer_output[:, :, pred_token_start_idx : pred_token_start_idx+self.NUM_OBS_TOKEN, :]
@@ -416,6 +444,7 @@ class SeerAgent(nn.Module):
             image_pred_feature = self.image_decoder_norm(image_pred_feature.reshape(-1, self.IMAGE_DECODER_hidden_dim))
             image_pred = self.image_decoder_pred(image_pred_feature)  
             image_pred = image_pred.view(B * S, self.NUM_OBS_TOKEN // self.NUM_OBS_TOKEN_PER_IMAGE, self.NUM_MASK_TOKEN, -1)  
+        # breakpoint()
         
         if self.action_pred_steps > 0:
             if self.obs_pred:
@@ -427,4 +456,47 @@ class SeerAgent(nn.Module):
             arm_pred_action = self.arm_action_decoder(action_pred_feature)
             gripper_pred_action = self.gripper_action_decoder(action_pred_feature)
         
+        # Extract attention weights for action prediction tokens if requested
+        action_attention_weights = None
+        if return_attention_weights and all_attention_weights is not None and self.action_pred_steps > 0:
+            if self.obs_pred:
+                this_num_obs_token = self.NUM_OBS_TOKEN
+            else:
+                this_num_obs_token = 0
+            
+            # Calculate the start and end indices for action prediction tokens in the flattened sequence
+            action_start_idx = pred_token_start_idx + this_num_obs_token
+            action_end_idx = action_start_idx + self.action_pred_steps
+            
+            history_len = self.sequence_length - self.action_pred_steps
+            final_timestep_action_start_idx = history_len - self.action_pred_steps
+            # Extract attention weights for action prediction tokens from selected layers
+            action_attention_weights = []
+            
+            # all_attention_weights now only contains the layers we requested from GPT2Model
+            for layer_idx, layer_weights in enumerate(all_attention_weights):
+                # layer_weights shape: [batch_size, num_heads, seq_len, seq_len]
+                # We want the attention FROM action tokens TO all other tokens
+                action_attn = layer_weights[:, :, -self.action_pred_steps:, :]
+                
+                # Select specific heads if requested (default: all heads)
+                if attention_heads is not None:
+                    action_attn = action_attn[:, attention_heads, :, :]
+                
+                # Move to CPU and convert to numpy with reduced precision to save memory
+                action_attn_cpu = action_attn.detach().cpu().numpy().astype(np.float16)
+                action_attention_weights.append(action_attn_cpu)
+                
+                # Clear GPU memory for this layer
+                del action_attn
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            
+            # Clear the original attention weights from GPU
+            del all_attention_weights
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        
+        if return_attention_weights:
+            return arm_pred_action, gripper_pred_action, image_pred, arm_pred_state, gripper_pred_state, loss_arm_action, action_attention_weights
         return arm_pred_action, gripper_pred_action, image_pred, arm_pred_state, gripper_pred_state, loss_arm_action

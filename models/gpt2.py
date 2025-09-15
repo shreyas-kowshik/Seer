@@ -151,6 +151,7 @@ class GPT2Attention(nn.Module):
         self,
         hidden_states: Optional[Tuple[torch.FloatTensor]],
         attention_mask: Optional[torch.FloatTensor] = None,
+        return_attention_weights: bool = False,
     ) -> Tuple[Union[torch.Tensor, Tuple[torch.Tensor]], ...]:
         
         query, key, value = self.c_attn(hidden_states).split(self.split_size, dim=2)
@@ -168,6 +169,8 @@ class GPT2Attention(nn.Module):
         attn_output = self.c_proj(attn_output)
         attn_output = self.resid_dropout(attn_output)
 
+        if return_attention_weights:
+            return attn_output, attn_weights
         return attn_output
 
 
@@ -204,13 +207,26 @@ class GPT2Block(nn.Module):
         self,
         hidden_states: Optional[Tuple[torch.FloatTensor]],
         attention_mask: Optional[torch.FloatTensor] = None,
+        return_attention_weights: bool = False,
     ) -> Union[Tuple[torch.Tensor], Optional[Tuple[torch.Tensor, Tuple[torch.FloatTensor, ...]]]]:
         residual = hidden_states
         hidden_states = self.ln_1(hidden_states)
-        attn_output = self.attn(
-            hidden_states,
-            attention_mask=attention_mask,
-        )
+        
+        if return_attention_weights:
+            # We need to modify the attention layer to return weights
+            # For now, we'll pass through the return_attention_weights flag
+            attn_output, attn_weights = self.attn(
+                hidden_states,
+                attention_mask=attention_mask,
+                return_attention_weights=return_attention_weights,
+            )
+        else:
+            attn_output = self.attn(
+                hidden_states,
+                attention_mask=attention_mask,
+            )
+            attn_weights = None
+        
         # residual connection
         hidden_states = attn_output + residual
 
@@ -220,6 +236,8 @@ class GPT2Block(nn.Module):
         # residual connection
         hidden_states = residual + feed_forward_hidden_states  # TODO
 
+        if return_attention_weights:
+            return hidden_states, attn_weights
         return hidden_states 
 
 
@@ -335,6 +353,8 @@ class GPT2Model(GPT2PreTrainedModel):
         self,
         attention_mask: Optional[torch.FloatTensor] = None,
         inputs_embeds: Optional[torch.FloatTensor] = None,
+        return_attention_weights: bool = False,
+        attention_layers: Optional[list] = None,
     ) -> Union[Tuple, BaseModelOutputWithPastAndCrossAttentions]:
         
         input_shape = inputs_embeds.size()[:-1]
@@ -344,21 +364,55 @@ class GPT2Model(GPT2PreTrainedModel):
 
         output_shape = (-1,) + input_shape[1:] + (hidden_states.size(-1),)
 
+        all_attention_weights = []
+        
+        # Determine which layers to compute attention weights for
+        if return_attention_weights and attention_layers is not None:
+            # Convert negative indices to positive
+            layers_to_compute = []
+            for layer_idx in attention_layers:
+                if layer_idx < 0:
+                    layer_idx = len(self.h) + layer_idx
+                if 0 <= layer_idx < len(self.h):
+                    layers_to_compute.append(layer_idx)
+        else:
+            layers_to_compute = list(range(len(self.h))) if return_attention_weights else []
+        
         for i, block in enumerate(self.h):
+            should_compute_attention = return_attention_weights and i in layers_to_compute
 
             if self.gradient_checkpointing and self.training:
-                hidden_states = self._gradient_checkpointing_func(
-                    block.__call__,
-                    hidden_states,
-                    attention_mask,
-                )
+                if should_compute_attention:
+                    hidden_states, attn_weights = self._gradient_checkpointing_func(
+                        block.__call__,
+                        hidden_states,
+                        attention_mask,
+                        return_attention_weights,
+                    )
+                    all_attention_weights.append(attn_weights)
+                else:
+                    hidden_states = self._gradient_checkpointing_func(
+                        block.__call__,
+                        hidden_states,
+                        attention_mask,
+                    )
             else:
-                hidden_states = block(
-                    hidden_states,
-                    attention_mask=attention_mask,
-                )
+                if should_compute_attention:
+                    hidden_states, attn_weights = block(
+                        hidden_states,
+                        attention_mask=attention_mask,
+                        return_attention_weights=return_attention_weights,
+                    )
+                    all_attention_weights.append(attn_weights)
+                else:
+                    hidden_states = block(
+                        hidden_states,
+                        attention_mask=attention_mask,
+                    )
 
         hidden_states = self.ln_f(hidden_states)
         hidden_states = hidden_states.view(output_shape)
         
+        if return_attention_weights:
+            return hidden_states, all_attention_weights
         return hidden_states

@@ -11,4 +11,4 @@
 
 # Run inside Apptainer container
 cd /home/skowshik/work/Seer/
-apptainer exec -B $HOME/.bashrc:/root/.bashrc --nv --fakeroot --writable-tmpfs /home/skowshik/work/wmsrl/seer_v4.sif bash scripts/CALVIN_ABC_D/Seer-Large/eval_D_D_large_custom_task.sh
+apptainer exec -B $HOME/.bashrc:/root/.bashrc --nv --fakeroot --writable-tmpfs /home/skowshik/work/wmsrl/seer_v4.sif bash scripts/CALVIN_ABC_D/Seer-Large/eval_D_D_large_custom_task_v2.sh

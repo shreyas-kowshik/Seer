@@ -91,6 +91,7 @@ def train_one_epoch_calvin(
     mv_avg_loss = []
     
     for num_steps, batch_calvin in t:
+        breakpoint()
         data_time_m.update(time.time() - end)
         global_step = num_steps + epoch * num_batches_per_epoch
 
@@ -164,6 +165,8 @@ def train_one_epoch_calvin(
             loss_image = torch.tensor([0.0]).to(device_id)
         loss_calvin = args.loss_arm_action_ratio * loss_arm_action + args.loss_gripper_action_ratio * loss_gripper_action + 0.1 * loss_image
 
+        breakpoint()
+        
         # gradient_accumulation_steps        
         loss = loss_calvin / args.gradient_accumulation_steps
         loss_arm_action = loss_arm_action / args.gradient_accumulation_steps
