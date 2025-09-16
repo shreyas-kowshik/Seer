@@ -91,7 +91,7 @@ def train_one_epoch_calvin(
     mv_avg_loss = []
     
     for num_steps, batch_calvin in t:
-        breakpoint()
+        # breakpoint()
         data_time_m.update(time.time() - end)
         global_step = num_steps + epoch * num_batches_per_epoch
 
@@ -125,13 +125,42 @@ def train_one_epoch_calvin(
         label_actions = torch.cat([actions[:, j:args.sequence_length-args.atten_goal+j, :].unsqueeze(-2) for j in range(args.action_pred_steps)], dim=-2) 
 
         with autocast():  # image_primary, image_wrist, state, language_instruction
-            arm_pred_action, gripper_pred_action, image_pred, arm_pred_state, gripper_pred_state, loss_arm_action = model(
-                image_primary=input_image_primary,
-                image_wrist=input_image_wrist,
-                state=input_state,
-                text_token=input_text_token,
-                action=actions[:, :args.sequence_length, :],
-            )
+            if args.loss_image_latent and args.loss_state_prediction:
+                arm_pred_action, gripper_pred_action, image_pred, arm_pred_state, gripper_pred_state, loss_arm_action, latent_features, state_predictions = model(
+                    image_primary=input_image_primary,
+                    image_wrist=input_image_wrist,
+                    state=input_state,
+                    text_token=input_text_token,
+                    action=actions[:, :args.sequence_length, :],
+                    return_latent_features=True,
+                    return_state_predictions=True,
+                )
+            elif args.loss_image_latent:
+                arm_pred_action, gripper_pred_action, image_pred, arm_pred_state, gripper_pred_state, loss_arm_action, latent_features = model(
+                    image_primary=input_image_primary,
+                    image_wrist=input_image_wrist,
+                    state=input_state,
+                    text_token=input_text_token,
+                    action=actions[:, :args.sequence_length, :],
+                    return_latent_features=True,
+                )
+            elif args.loss_state_prediction:
+                arm_pred_action, gripper_pred_action, image_pred, arm_pred_state, gripper_pred_state, loss_arm_action, state_predictions = model(
+                    image_primary=input_image_primary,
+                    image_wrist=input_image_wrist,
+                    state=input_state,
+                    text_token=input_text_token,
+                    action=actions[:, :args.sequence_length, :],
+                    return_state_predictions=True,
+                )
+            else:
+                arm_pred_action, gripper_pred_action, image_pred, arm_pred_state, gripper_pred_state, loss_arm_action = model(
+                    image_primary=input_image_primary,
+                    image_wrist=input_image_wrist,
+                    state=input_state,
+                    text_token=input_text_token,
+                    action=actions[:, :args.sequence_length, :],
+                )
         # loss_action
         if args.loss_action and args.action_pred_steps:
             loss_arm_action = torch.nn.functional.smooth_l1_loss(
@@ -145,7 +174,63 @@ def train_one_epoch_calvin(
             loss_gripper_action = torch.tensor([0.0]).to(device_id)
 
         # loss_image 
-        if args.loss_image and args.obs_pred:
+        # If loss_image_latent is True, ignore loss_image
+        if args.loss_image_latent:
+            args.loss_image = False
+            # print("loss_image_latent=True, ignoring loss_image")
+        
+        if args.loss_image_latent and args.obs_pred:
+            # print("Using latent space MSE loss for image prediction")
+            # Get ground truth images and process them through the same pipeline
+            label_image_primary = images_primary[:, args.future_steps:args.future_steps+args.sequence_length-args.atten_goal, :]
+            label_image_wrist = images_wrist[:, args.future_steps:args.future_steps+args.sequence_length-args.atten_goal, :]
+            
+            # Process ground truth images through the same vision encoder and perceiver resampler pipeline
+            with torch.no_grad():
+                # Get the underlying model (handle DDP wrapper)
+                model_unwrapped = model.module if hasattr(model, 'module') else model
+                
+                # Vision encoder
+                if label_image_primary.type() != model_unwrapped.vision_encoder_type:
+                    label_image_primary = label_image_primary.type(model_unwrapped.vision_encoder_type)
+                    label_image_wrist = label_image_wrist.type(model_unwrapped.vision_encoder_type)
+                
+                label_image_primary_feature, _, _ = model_unwrapped.vision_encoder.forward_encoder(label_image_primary.flatten(0, 1), mask_ratio=0.0)
+                label_image_wrist_feature, _, _ = model_unwrapped.vision_encoder.forward_encoder(label_image_wrist.flatten(0, 1), mask_ratio=0.0)
+                
+                if label_image_primary_feature.type() != model_unwrapped.perceiver_resampler_type:
+                    label_image_primary_feature = label_image_primary_feature.type(model_unwrapped.perceiver_resampler_type)
+                    label_image_wrist_feature = label_image_wrist_feature.type(model_unwrapped.perceiver_resampler_type)
+                
+                # Reshape and extract features (excluding cls token)
+                B_label, S_label = label_image_primary.shape[:2]
+                label_image_primary_feature = label_image_primary_feature.view(B_label, S_label, label_image_primary_feature.shape[-2], label_image_primary_feature.shape[-1])
+                label_image_wrist_feature = label_image_wrist_feature.view(B_label, S_label, label_image_wrist_feature.shape[-2], label_image_wrist_feature.shape[-1])
+                label_image_primary_feature = label_image_primary_feature[:, :, 1:, :]  # Remove cls token
+                label_image_wrist_feature = label_image_wrist_feature[:, :, 1:, :]  # Remove cls token
+                
+                # Perceiver resampler
+                label_image_primary_embedding = model_unwrapped.perceiver_resampler(label_image_primary_feature.reshape(B_label*S_label, 196, model_unwrapped.RESAMPLER_hidden_dim).unsqueeze(1).unsqueeze(1))
+                label_image_wrist_embedding = model_unwrapped.perceiver_resampler(label_image_wrist_feature.reshape(B_label*S_label, 196, model_unwrapped.RESAMPLER_hidden_dim).unsqueeze(1).unsqueeze(1))
+                
+                # Project to hidden dimension
+                label_image_primary_embedding = model_unwrapped.image_primary_projector(label_image_primary_embedding.flatten(0, 2)).view(B_label, S_label, -1, model_unwrapped.hidden_dim)
+                label_image_wrist_embedding = model_unwrapped.image_wrist_projector(label_image_wrist_embedding.flatten(0, 2)).view(B_label, S_label, -1, model_unwrapped.hidden_dim)
+            
+            # Get predicted latent features from obs_token outputs
+            image_primary_embedding, image_wrist_embedding = latent_features
+
+            # breakpoint()
+            
+            # Calculate MSE loss in latent space
+            loss_image = 0.5 * (torch.nn.functional.mse_loss(
+                            image_primary_embedding[:, :args.sequence_length-args.atten_goal], 
+                            label_image_primary_embedding.detach()) + 
+                            torch.nn.functional.mse_loss(
+                            image_wrist_embedding[:, :args.sequence_length-args.atten_goal], 
+                            label_image_wrist_embedding.detach()))
+        elif args.loss_image and args.obs_pred:
+            # print("Using pixel space MSE loss for image prediction")
             label_image_primary = images_primary[:, args.future_steps:args.future_steps+args.sequence_length-args.atten_goal, :].flatten(0, 1)
             label_image_wrist = images_wrist[:, args.future_steps:args.future_steps+args.sequence_length-args.atten_goal, :].flatten(0, 1)
             label_image_primary = patchify(label_image_primary, patch_size=args.patch_size)
@@ -163,15 +248,46 @@ def train_one_epoch_calvin(
                             label_image_wrist.detach()))
         else:
             loss_image = torch.tensor([0.0]).to(device_id)
-        loss_calvin = args.loss_arm_action_ratio * loss_arm_action + args.loss_gripper_action_ratio * loss_gripper_action + 0.1 * loss_image
+            
+        # loss_state_prediction
+        if args.loss_state_prediction and args.obs_pred:
+            # print("Using state prediction loss")
+            # Get ground truth states for the same timestep as image loss
+            label_states = states[:, args.future_steps:args.future_steps+args.sequence_length-args.atten_goal, :]
+            
+            # Process ground truth states the same way as input states
+            if args.gripper_width:
+                label_states_processed = torch.cat([label_states[..., :6], label_states[..., -2:]], dim=-1)
+            else:
+                label_states_processed = torch.cat([label_states[..., :6], label_states[..., [-1]]], dim=-1)
+                label_states_processed[..., 6:] = (label_states_processed[..., 6:] + 1) // 2
+            
+            # Get predicted states from obs_token outputs
+            arm_state_pred, gripper_state_pred = state_predictions
+            
+            # Calculate MSE loss for state prediction
+            loss_arm_state = torch.nn.functional.mse_loss(
+                arm_state_pred[:, :args.sequence_length-args.atten_goal], 
+                label_states_processed[:, :args.sequence_length-args.atten_goal, :6].detach())
+            
+            loss_gripper_state = torch.nn.functional.mse_loss(
+                gripper_state_pred[:, :args.sequence_length-args.atten_goal], 
+                label_states_processed[:, :args.sequence_length-args.atten_goal, 6:].detach())
+            
+            loss_state_prediction = loss_arm_state + loss_gripper_state
+        else:
+            loss_state_prediction = torch.tensor([0.0]).to(device_id)
+            
+        loss_calvin = args.loss_arm_action_ratio * loss_arm_action + args.loss_gripper_action_ratio * loss_gripper_action + 0.1 * loss_image + 0.1 * loss_state_prediction
 
-        breakpoint()
+        # breakpoint()
         
         # gradient_accumulation_steps        
         loss = loss_calvin / args.gradient_accumulation_steps
         loss_arm_action = loss_arm_action / args.gradient_accumulation_steps
         loss_gripper_action = loss_gripper_action / args.gradient_accumulation_steps
         loss_image = loss_image / args.gradient_accumulation_steps
+        loss_state_prediction = loss_state_prediction / args.gradient_accumulation_steps
         mv_avg_loss.append(loss.item())
 
         ### backward pass ###
@@ -221,12 +337,13 @@ def train_one_epoch_calvin(
                         "loss_arm_action": loss_arm_action.item() * args.gradient_accumulation_steps,
                         "loss_gripper_action": loss_gripper_action.item() * args.gradient_accumulation_steps,
                         "loss_image": loss_image.item() * args.gradient_accumulation_steps,
+                        "loss_state_prediction": loss_state_prediction.item() * args.gradient_accumulation_steps,
                         "global_step": global_step,
                     },
                 )
 
         avg_horizon = min(100, len(mv_avg_loss))
-        t.set_postfix({"avg loss": sum(mv_avg_loss[-avg_horizon:]) / avg_horizon, "loss": loss_calvin.item(), "loss_image": loss_image.item(), "loss_arm_action": loss_arm_action.item(), "loss_gripper_action": loss_gripper_action.item()})
+        t.set_postfix({"avg loss": sum(mv_avg_loss[-avg_horizon:]) / avg_horizon, "loss": loss_calvin.item(), "loss_image": loss_image.item(), "loss_arm_action": loss_arm_action.item(), "loss_gripper_action": loss_gripper_action.item(), "loss_state_prediction": loss_state_prediction.item()})
 
         # if args.save_every_iter != -1 and args.save_checkpoint and global_step % args.save_every_iter == 0 and global_step > 0:
                 

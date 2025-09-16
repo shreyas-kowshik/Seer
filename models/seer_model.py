@@ -314,15 +314,23 @@ class SeerAgent(nn.Module):
         self.action_decoder_type = next(self.action_decoder.parameters()).type()
 
 
-    def forward(self, image_primary, image_wrist, state, text_token, action=None, return_attention_weights=False, attention_layers=None, attention_heads=None):  
+    def forward(self, image_primary, image_wrist, state, text_token, action=None, return_attention_weights=False, attention_layers=None, attention_heads=None, return_latent_features=False, return_state_predictions=False):  
         '''
         `return_attention_weights`: If true, return the attention weights for the action prediction tokens.
         `attention_layers`: If not None, return the attention weights for the specified layers.
         `attention_heads`: If not None, return the attention weights for the specified heads.
+        `return_latent_features`: If true, return the latent features from the image pipeline.
+        `return_state_predictions`: If true, return the state predictions from obs_token outputs.
 
         If `return_attention_weights` True, returns:
             action_attention_weights: array of length size of `attention_layers` with each tensor of shape [batch_size, num_heads, action_pred_steps, seq_len]
             attention_mask: shape [batch_size, seq_len, seq_len]
+        
+        If `return_latent_features` True, returns:
+            latent_features: tuple of (image_primary_embedding, image_wrist_embedding) from the perceiver resampler
+            
+        If `return_state_predictions` True, returns:
+            state_predictions: tuple of (arm_state_pred, gripper_state_pred) from obs_token outputs
         '''
         if self.training and self.phase == "pretrain":
             if self.obs_pred:
@@ -454,7 +462,16 @@ class SeerAgent(nn.Module):
             image_pred_feature = image_decoder_output[:, -self.NUM_MASK_TOKEN:, :]
             image_pred_feature = self.image_decoder_norm(image_pred_feature.reshape(-1, self.IMAGE_DECODER_hidden_dim))
             image_pred = self.image_decoder_pred(image_pred_feature)  
-            image_pred = image_pred.view(B * S, self.NUM_OBS_TOKEN // self.NUM_OBS_TOKEN_PER_IMAGE, self.NUM_MASK_TOKEN, -1)  
+            image_pred = image_pred.view(B * S, self.NUM_OBS_TOKEN // self.NUM_OBS_TOKEN_PER_IMAGE, self.NUM_MASK_TOKEN, -1)
+            
+            # State prediction from obs_token outputs
+            if return_state_predictions:
+                # Use the first obs_token for each image for state prediction
+                state_pred_feature = obs_pred_feature[:, :, :self.NUM_OBS_TOKEN_PER_IMAGE, :]  # [B, S, NUM_OBS_TOKEN_PER_IMAGE, hidden_dim]
+                state_pred_feature = state_pred_feature.mean(dim=2)  # Average across obs tokens for each image [B, S, hidden_dim]
+                state_pred_feature = self.recon_state_decoder(state_pred_feature)
+                arm_pred_state = self.recon_arm_state_decoder(state_pred_feature)
+                gripper_pred_state = self.recon_gripper_state_decoder(state_pred_feature)  
         # breakpoint()
         
         if self.action_pred_steps > 0:
@@ -467,16 +484,29 @@ class SeerAgent(nn.Module):
             arm_pred_action = self.arm_action_decoder(action_pred_feature)
             gripper_pred_action = self.gripper_action_decoder(action_pred_feature)
         
-        # Extract attention weights for action prediction tokens if requested
-        for idx in range(len(all_attention_weights)):
-            all_attention_weights[idx] = all_attention_weights[idx].detach().cpu().numpy()
-            all_attention_weights[idx] = all_attention_weights[idx][0, :, -self.action_pred_steps:, :]
-
-            # import gc
-            # gc.collect()
-            # if torch.cuda.is_available():
-            #     torch.cuda.empty_cache()
-        
         if return_attention_weights:
+            # Extract attention weights for action prediction tokens if requested
+            for idx in range(len(all_attention_weights)):
+                all_attention_weights[idx] = all_attention_weights[idx].detach().cpu().numpy()
+                all_attention_weights[idx] = all_attention_weights[idx][0, :, -self.action_pred_steps:, :]
+
+                # import gc
+                # gc.collect()
+                # if torch.cuda.is_available():
+                #     torch.cuda.empty_cache()
+        
+        if return_attention_weights and return_latent_features and return_state_predictions:
+            return arm_pred_action, gripper_pred_action, image_pred, arm_pred_state, gripper_pred_state, loss_arm_action, all_attention_weights, self.attention_mask, (image_primary_embedding, image_wrist_embedding), (arm_pred_state, gripper_pred_state)
+        elif return_attention_weights and return_latent_features:
+            return arm_pred_action, gripper_pred_action, image_pred, arm_pred_state, gripper_pred_state, loss_arm_action, all_attention_weights, self.attention_mask, (image_primary_embedding, image_wrist_embedding)
+        elif return_attention_weights and return_state_predictions:
+            return arm_pred_action, gripper_pred_action, image_pred, arm_pred_state, gripper_pred_state, loss_arm_action, all_attention_weights, self.attention_mask, (arm_pred_state, gripper_pred_state)
+        elif return_latent_features and return_state_predictions:
+            return arm_pred_action, gripper_pred_action, image_pred, arm_pred_state, gripper_pred_state, loss_arm_action, (image_primary_embedding, image_wrist_embedding), (arm_pred_state, gripper_pred_state)
+        elif return_attention_weights:
             return arm_pred_action, gripper_pred_action, image_pred, arm_pred_state, gripper_pred_state, loss_arm_action, all_attention_weights, self.attention_mask
+        elif return_latent_features:
+            return arm_pred_action, gripper_pred_action, image_pred, arm_pred_state, gripper_pred_state, loss_arm_action, (image_primary_embedding, image_wrist_embedding)
+        elif return_state_predictions:
+            return arm_pred_action, gripper_pred_action, image_pred, arm_pred_state, gripper_pred_state, loss_arm_action, (arm_pred_state, gripper_pred_state)
         return arm_pred_action, gripper_pred_action, image_pred, arm_pred_state, gripper_pred_state, loss_arm_action

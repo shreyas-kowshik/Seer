@@ -206,6 +206,8 @@ def get_parser(is_eval=False):
     # loss
     parser.add_argument("--loss_action", default=False, action="store_true")
     parser.add_argument("--loss_image", default=False, action="store_true")
+    parser.add_argument("--loss_image_latent", default=False, action="store_true")
+    parser.add_argument("--loss_state_prediction", default=False, action="store_true")
     
     # calvin
     parser.add_argument("--except_lang", default=False, action="store_true")
