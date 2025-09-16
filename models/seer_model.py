@@ -315,6 +315,15 @@ class SeerAgent(nn.Module):
 
 
     def forward(self, image_primary, image_wrist, state, text_token, action=None, return_attention_weights=False, attention_layers=None, attention_heads=None):  
+        '''
+        `return_attention_weights`: If true, return the attention weights for the action prediction tokens.
+        `attention_layers`: If not None, return the attention weights for the specified layers.
+        `attention_heads`: If not None, return the attention weights for the specified heads.
+
+        If `return_attention_weights` True, returns:
+            action_attention_weights: array of length size of `attention_layers` with each tensor of shape [batch_size, num_heads, action_pred_steps, seq_len]
+            attention_mask: shape [batch_size, seq_len, seq_len]
+        '''
         if self.training and self.phase == "pretrain":
             if self.obs_pred:
                 this_num_obs_token = self.NUM_OBS_TOKEN
@@ -415,13 +424,15 @@ class SeerAgent(nn.Module):
             transformer_input = transformer_input.type(self.transformer_backbone_type)
         transformer_input = self.embedding_layer_norm(transformer_input)
         
-        if return_attention_weights:
+        if return_attention_weights: # Get all attention weights across layers
+            # breakpoint()
             transformer_output, all_attention_weights = self.transformer_backbone(
                 inputs_embeds=transformer_input, 
                 attention_mask=self.attention_mask,
                 return_attention_weights=return_attention_weights,
                 attention_layers=attention_layers
             )
+            # breakpoint()
         else:
             transformer_output = self.transformer_backbone(
                 inputs_embeds=transformer_input, 
@@ -457,46 +468,15 @@ class SeerAgent(nn.Module):
             gripper_pred_action = self.gripper_action_decoder(action_pred_feature)
         
         # Extract attention weights for action prediction tokens if requested
-        action_attention_weights = None
-        if return_attention_weights and all_attention_weights is not None and self.action_pred_steps > 0:
-            if self.obs_pred:
-                this_num_obs_token = self.NUM_OBS_TOKEN
-            else:
-                this_num_obs_token = 0
-            
-            # Calculate the start and end indices for action prediction tokens in the flattened sequence
-            action_start_idx = pred_token_start_idx + this_num_obs_token
-            action_end_idx = action_start_idx + self.action_pred_steps
-            
-            history_len = self.sequence_length - self.action_pred_steps
-            final_timestep_action_start_idx = history_len - self.action_pred_steps
-            # Extract attention weights for action prediction tokens from selected layers
-            action_attention_weights = []
-            
-            # all_attention_weights now only contains the layers we requested from GPT2Model
-            for layer_idx, layer_weights in enumerate(all_attention_weights):
-                # layer_weights shape: [batch_size, num_heads, seq_len, seq_len]
-                # We want the attention FROM action tokens TO all other tokens
-                action_attn = layer_weights[:, :, -self.action_pred_steps:, :]
-                
-                # Select specific heads if requested (default: all heads)
-                if attention_heads is not None:
-                    action_attn = action_attn[:, attention_heads, :, :]
-                
-                # Move to CPU and convert to numpy with reduced precision to save memory
-                action_attn_cpu = action_attn.detach().cpu().numpy().astype(np.float16)
-                action_attention_weights.append(action_attn_cpu)
-                
-                # Clear GPU memory for this layer
-                del action_attn
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-            
-            # Clear the original attention weights from GPU
-            del all_attention_weights
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+        for idx in range(len(all_attention_weights)):
+            all_attention_weights[idx] = all_attention_weights[idx].detach().cpu().numpy()
+            all_attention_weights[idx] = all_attention_weights[idx][0, :, -self.action_pred_steps:, :]
+
+            # import gc
+            # gc.collect()
+            # if torch.cuda.is_available():
+            #     torch.cuda.empty_cache()
         
         if return_attention_weights:
-            return arm_pred_action, gripper_pred_action, image_pred, arm_pred_state, gripper_pred_state, loss_arm_action, action_attention_weights
+            return arm_pred_action, gripper_pred_action, image_pred, arm_pred_state, gripper_pred_state, loss_arm_action, all_attention_weights, self.attention_mask
         return arm_pred_action, gripper_pred_action, image_pred, arm_pred_state, gripper_pred_state, loss_arm_action

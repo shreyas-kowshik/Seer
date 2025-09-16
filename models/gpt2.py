@@ -356,6 +356,10 @@ class GPT2Model(GPT2PreTrainedModel):
         return_attention_weights: bool = False,
         attention_layers: Optional[list] = None,
     ) -> Union[Tuple, BaseModelOutputWithPastAndCrossAttentions]:
+        '''
+        `return_attention_weights`: If true, return the attention weights for the action prediction tokens.
+        `attention_layers`: If not None, return the attention weights for the specified layers.
+        '''
         
         input_shape = inputs_embeds.size()[:-1]
 

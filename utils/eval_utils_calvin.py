@@ -10,6 +10,7 @@ from collections import deque
 from moviepy.editor import ImageSequenceClip
 import imageio
 import matplotlib.pyplot as plt
+import seaborn as sns
 from PIL import Image, ImageDraw, ImageFont
 
 sys.path.append('/home/skowshik/work/calvin/calvin_models')
@@ -125,6 +126,98 @@ def update_append_dict_with_info_dict(append_dict, info_dict):
 def flatten(arrays):
     return [item for sublist in arrays for item in sublist]
 
+def visualize_attention_maps(attention_weights, attention_mask, gif_folder, sequence_i, action_pred_steps=3):
+    """
+    Visualize attention maps across layers and heads for the first predicted action.
+    
+    Args:
+        attention_weights: List of attention weight arrays from different layers, shape [[num_heads, action_pred_steps, seq_len] * num_layers]
+        attention_mask: Attention mask from the model (contains -inf for masked positions) shape: [seq_len, seq_len]
+        gif_folder: Directory to save the plots
+        sequence_i: Sequence index for naming files
+        action_pred_steps: Number of action prediction steps
+    """
+    if not attention_weights or len(attention_weights) == 0:
+        print("No attention weights to visualize")
+        return
+    
+    # Get the last timestep attention weights for the first predicted action
+    # attention_weights shape: [layers][batch, heads, action_tokens, seq_len]
+    # We want: last timestep, first action token (index 0)
+    
+    # Extract attention weights for the first action token from the last timestep
+    first_action_attention = []
+    for layer_idx, layer_weights in enumerate(attention_weights):
+        # layer_weights shape: [batch, heads, action_tokens, seq_len]
+        # Take the first action token (index 0) from the last timestep
+        first_action_attn = layer_weights[:, 0, :]  # [heads, seq_len]
+        first_action_attention.append(first_action_attn)
+    
+    # Convert to numpy array: [layers, heads, seq_len]
+    attention_array = np.array(first_action_attention)
+    
+    # Use the attention mask to find valid timesteps
+    # attention_mask shape: [seq_len, seq_len] with -inf for masked positions
+    # We need to find which positions the action tokens can attend to
+    
+    # Get the action token positions in the sequence
+    # For the last timestep, action tokens are at the end of the sequence
+    seq_len = attention_array.shape[2]
+    action_start_pos = seq_len - action_pred_steps  # Position of first action token
+    
+    transformed_attention_mask = []
+    # Craete transformed attnetion mask with 0 replaced by 1 and -inf replaced by 0
+    # Do this only for first action token prediction timestep
+    for t in range(seq_len):
+        if attention_mask[action_start_pos, t] == 0:
+            transformed_attention_mask.append(1)
+        else:
+            transformed_attention_mask.append(0)
+    transformed_attention_mask = np.array(transformed_attention_mask) # [seq_len]
+
+    # Multiply attention array seq_len dimension by transformed attention mask and sum over seq_len dimension in steps of 71
+    attention_array = attention_array * transformed_attention_mask.reshape(1, 1, -1)
+    # breakpoint()
+    # Sum over seq_len dimension in ::71
+    attention_array = attention_array.reshape(attention_array.shape[0], attention_array.shape[1], -1, 71)
+    # breakpoint()
+    attention_array = np.sum(attention_array, axis=3) # shape: [num_layers, num_heads, 10]
+
+    # Plot a heatmap of attention array across different layers by averaging over heads
+    plt.figure(figsize=(15, 8))
+    sns.heatmap(attention_array.mean(axis=1), 
+                xticklabels=[f"T{t}" for t in range(10)],
+                yticklabels=[f"Layer {i+1}" for i in range(attention_array.shape[0])],
+                cmap='Blues', 
+                cbar_kws={'label': 'Attention Weight'})
+    plt.title(f'Attention Maps Across Layers (Sequence {sequence_i})\nFirst Action Token, Averaged Over Heads')
+    plt.xlabel('Timesteps')
+    plt.ylabel('Layers')
+    plt.tight_layout()
+    layer_plot_path = os.path.join(gif_folder, f"{sequence_i}_attention_layers.png")
+    plt.savefig(layer_plot_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"Attention visualization saved to:")
+    print(f"  - Layers: {layer_plot_path}")
+
+    # Plot a heatmap of attention array across different heads by averaging over layers
+    plt.figure(figsize=(15, 8))
+    sns.heatmap(attention_array.mean(axis=0), 
+                xticklabels=[f"T{t}" for t in range(10)],
+                yticklabels=[f"Head {i+1}" for i in range(attention_array.shape[1])],
+                cmap='Reds', 
+                cbar_kws={'label': 'Attention Weight'})
+    plt.title(f'Attention Maps Across Heads (Sequence {sequence_i})\nFirst Action Token, Averaged Over Layers')
+    plt.xlabel('Timesteps')
+    plt.ylabel('Heads')
+    plt.tight_layout()
+    head_plot_path = os.path.join(gif_folder, f"{sequence_i}_attention_heads.png")
+    plt.savefig(head_plot_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"Attention visualization saved to:")
+    print(f"  - Heads: {head_plot_path}")
+
+
 class ModelWrapper(CalvinBaseModel):
     def __init__(self, model, tokenizer, image_processor, cast_dtype, history_len=10, 
                 calvin_eval_max_steps=360, action_pred_steps=3):
@@ -155,6 +248,11 @@ class ModelWrapper(CalvinBaseModel):
         self.act_queue = deque(maxlen=self.history_len-1)
 
     def step(self, obs, goal, timestep, return_pred_img=False, return_attention_weights=False, attention_layers=None, attention_heads=None):
+        '''
+        If return_attention_weights True, returns:
+            action_attention_weights: array of length size of `attention_layers` with each tensor of shape [num_heads, action_pred_steps, seq_len]
+            attention_mask: shape [seq_len, seq_len]
+        '''
         out_dict = {} # Stores stuff to store in output
 
         image = obs["rgb_obs"]['rgb_static']
@@ -201,8 +299,10 @@ class ModelWrapper(CalvinBaseModel):
                 input_image_primary = image_primary
                 input_image_wrist = image_wrist
                 input_state = state
+            
             if return_attention_weights:
-                arm_action, gripper_action, image_pred, arm_pred_state, gripper_pred_state, _, action_attention_weights = self.model(
+                # breakpoint()
+                arm_action, gripper_action, image_pred, arm_pred_state, gripper_pred_state, _, action_attention_weights, attention_mask = self.model(
                     image_primary=input_image_primary,
                     image_wrist=input_image_wrist,
                     state=input_state,
@@ -212,12 +312,13 @@ class ModelWrapper(CalvinBaseModel):
                     attention_layers=attention_layers,
                     attention_heads=attention_heads,
                 )
+                # breakpoint()
                 
                 # Force garbage collection and clear GPU cache after attention weights extraction
-                import gc
-                gc.collect()
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
+                # import gc
+                # gc.collect()
+                # if torch.cuda.is_available():
+                #     torch.cuda.empty_cache()
             else:
                 arm_action, gripper_action, image_pred, arm_pred_state, gripper_pred_state, _ = self.model(
                     image_primary=input_image_primary,
@@ -250,6 +351,7 @@ class ModelWrapper(CalvinBaseModel):
             out_dict['image_pred10'] = image_pred10
             if return_attention_weights:
                 out_dict['action_attention_weights'] = action_attention_weights
+                out_dict['attention_mask'] = attention_mask.cpu().numpy()
 
         return out_dict
 
@@ -339,14 +441,6 @@ def get_gif_folder(custom_eval_sequences, eval_log_dir):
     # Create a folder to save the GIFs for the custom set of sequences
     gif_folder = os.path.join(eval_log_dir, task_name)
     return gif_folder
-
-# def save_gif_from_image_array(images_array, custom_eval_sequences, eval_log_dir, main_name='', append_name='', fps=25):
-#     task_name = custom_eval_sequences.split('/')[-1].split('.')[0]
-#     # Create a folder to save the GIFs for the custom set of sequences
-#     gif_folder = os.path.join(eval_log_dir, task_name)
-#     os.makedirs(gif_folder, exist_ok=True)
-#     gif_path = os.path.join(gif_folder, f"{main_name}_{append_name}.gif")
-#     imageio.mimsave(gif_path, images_array, fps=fps)
 
 def save_gif_from_image_array(images_array, custom_eval_sequences, eval_log_dir, main_name='', append_name='', fps=25, text_array=None):
     """
@@ -442,7 +536,11 @@ def evaluate_sequence(env, model, task_checker, initial_state, eval_sequence, va
         if success:
             success_counter += 1
         else:
-            breakpoint()
+            # Visualize attention maps for failed sequence
+            if ('action_attention_weights' in episode_out_dict and episode_out_dict['action_attention_weights'] is not None and
+                'attention_mask' in episode_out_dict and episode_out_dict['attention_mask'] is not None):
+                gif_folder = get_gif_folder(custom_eval_sequences, eval_log_dir)
+                visualize_attention_maps(episode_out_dict['action_attention_weights'], episode_out_dict['attention_mask'], gif_folder, sequence_i, action_pred_steps=3)
             # Flatten `eval_sequence_out_dict`
             for k in eval_sequence_out_dict.keys():
                 eval_sequence_out_dict[k] = flatten(eval_sequence_out_dict[k])
@@ -463,7 +561,11 @@ def evaluate_sequence(env, model, task_checker, initial_state, eval_sequence, va
 
             return success_counter
     
-    breakpoint()
+    # Visualize attention maps for successful sequence
+    if ('action_attention_weights' in eval_sequence_out_dict and eval_sequence_out_dict['action_attention_weights'] is not None and
+        'attention_mask' in eval_sequence_out_dict and eval_sequence_out_dict['attention_mask'] is not None):
+        gif_folder = get_gif_folder(custom_eval_sequences, eval_log_dir)
+        visualize_attention_maps(eval_sequence_out_dict['action_attention_weights'], eval_sequence_out_dict['attention_mask'], gif_folder, sequence_i, action_pred_steps=3)
     # Flatten `eval_sequence_out_dict`
     for k in eval_sequence_out_dict.keys():
         eval_sequence_out_dict[k] = flatten(eval_sequence_out_dict[k])
@@ -495,6 +597,8 @@ def rollout(env, model, task_oracle, subtask, val_annotations, plans, debug, eva
     planned_actions = []
     
     episode_out_dict = {} # Stores tensors for entire episode
+    attention_weights_collection = [] # Store attention weights for visualization
+    attention_mask_collection = None # Store attention mask for visualization
 
     if robot_obs is not None and scene_obs is not None:
         env.reset(robot_obs=robot_obs, scene_obs=scene_obs)
@@ -514,15 +618,24 @@ def rollout(env, model, task_oracle, subtask, val_annotations, plans, debug, eva
     
     # DEBUG Info #
     debug__step = 0
+    attention_weights_collection = None
+    attention_mask_collection = None
+    attention_mask_collection
     for step in range(EP_LEN):
         debug__step = step
         # Use memory-efficient attention weight extraction
-        # Extract only last few layers and first few heads to reduce memory usage
-        out_dict = model.step(obs, lang_annotation, step, return_attention_weights=True, 
-                             attention_layers=[-3, -2, -1],  # Only last 3 layers
-                             attention_heads=[0, 1, 2, 3])   # Only first 4 heads
+        # Extract all layers for visualization but limit heads to reduce memory usage
         # breakpoint()
+        out_dict = model.step(obs, lang_annotation, step, 
+                             return_attention_weights=True, 
+                             attention_layers=[0, 5, 10, 15, 20, 23],  # All layers (1-24)
+                             attention_heads=[0, 5, 10, 15])   # All 16 heads
         action = out_dict['action']
+        
+        # Collect attention weights and mask for visualization (only last timestep)
+        if 'action_attention_weights' in out_dict and out_dict['action_attention_weights'] is not None:
+            attention_weights_collection = out_dict.pop('action_attention_weights')
+            attention_mask_collection = out_dict.pop('attention_mask')
         
         if len(planned_actions) == 0:
             if action.shape == (7,):
@@ -548,15 +661,23 @@ def rollout(env, model, task_oracle, subtask, val_annotations, plans, debug, eva
         if step == 0:
             collect_plan(model, plans, subtask)
 
-        # breakpoint()
-
         # check if current step solves a task
         current_task_info = task_oracle.get_task_info_for_set(start_info, current_info, {subtask})
         if len(current_task_info) > 0:
             # breakpoint()
+            # Visualize attention maps before returning success
+            if (attention_weights_collection is not None) and (attention_mask_collection is not None):
+                # breakpoint()
+                gif_folder = get_gif_folder(custom_eval_sequences, eval_log_dir)
+                visualize_attention_maps(attention_weights_collection, attention_mask_collection, gif_folder, sequence_i, action_pred_steps=3)
             return True, episode_out_dict
     
     # breakpoint()
+    # Visualize attention maps before returning failure
+    if (attention_weights_collection is not None) and (attention_mask_collection is not None):
+        # breakpoint()
+        gif_folder = get_gif_folder(custom_eval_sequences, eval_log_dir)
+        visualize_attention_maps(attention_weights_collection, attention_mask_collection, gif_folder, sequence_i, action_pred_steps=3)
     return False, episode_out_dict
 
 import pdb
