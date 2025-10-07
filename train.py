@@ -83,6 +83,7 @@ def main(args):
             use_state=args.use_state,
             use_wrist_view=args.use_wrist_view,
             model_size=args.model_size,
+            use_depth=args.use_depth,
             )
         print(f"[INFO] Encoder: {args.encoder_type} ({args.dino_variant if args.encoder_type=='vit' else 'ResNet'}) | "
             f"Use text: {args.use_text} | Use state: {args.use_state} | Wrist view: {args.use_wrist_view} | "
@@ -129,6 +130,7 @@ def main(args):
         print("wandb_project :", args.wandb_project)
         print("wandb_entity :", args.wandb_entity)
         wandb.init(
+            mode="disabled",
             project=args.wandb_project,
             entity=args.wandb_entity,
             name=args.run_name,

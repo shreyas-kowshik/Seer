@@ -165,7 +165,8 @@ class SeerAgentMini(nn.Module):
         use_text: bool = True,
         use_state: bool = True,
         use_wrist_view: bool = True,
-        dino_variant: str = "dinov2_vits14"
+        use_depth:bool = False,
+        dino_variant: str = "dinov2_vits14",
     ):
         super().__init__()
         self.finetune_type = finetune_type
@@ -492,7 +493,7 @@ class SeerAgentMini(nn.Module):
 
     # ------------------------------------------------------------------------
 
-    def forward(self, image_primary, image_wrist, state, text_token, action=None):
+    def forward(self, image_primary, image_wrist, state, text_token, action=None, images_primary_depth=None, images_wrist_depth=None):
         # rebuild attention mask each forward during training
         if self.training and self.phase == "pretrain":
             this_num_obs_token = (self.NUM_OBS_TOKEN if self.obs_pred else 0)

@@ -76,7 +76,7 @@ from typing import Any, Dict, List, Tuple, Callable, Union
 obs_config = DictConfig(
     {
         "rgb_obs": ["rgb_static", "rgb_gripper"],
-        "depth_obs": [],
+        "depth_obs": ["rgb_static_depth", 'rgb_gripper_depth'],
         "state_obs": ["robot_obs"],
         "actions": ["rel_actions"],
         "language": ["language"],
@@ -2068,6 +2068,8 @@ class BaseLiberoDataset(Dataset):
             data_dict["rel_actions"] = self.load_action(other_file)
             data_dict["robot_obs"] = self.load_robot_obs(other_file)
             data_dict["scene_obs"] = self.load_scene_obs(episode_id, str_step_id)
+            data_dict["rgb_static_depth"] = self.load_primary_depth(other_file)
+            data_dict['rgb_gripper_depth'] = self.load_gripper_depth(other_file)
             episodes.append(data_dict)
         keys = list(chain(*self.observation_space.values()))
         keys.remove("language")
@@ -2117,7 +2119,39 @@ class BaseLiberoDataset(Dataset):
             raise NotImplementedError
 
         return language_instruction
+
+    def load_primary_depth(self, other_file, max_depth=5):
+        if self.load_libero_file == "h5":
+            depth = other_file["observation"]["depth_primary"][()]
+        elif self.load_libero_file == "npz":
+            depth = other_file["observation"]["depth_primary"]
+        else:
+            raise NotImplementedError
         
+        if depth.ndim >= 3 and depth.shape[-1] == 1:
+            depth = np.squeeze(depth, axis=-1)
+        depth = np.clip(depth, 0.0, max_depth)
+        depth = depth / max_depth
+
+        return depth.astype(np.float32)
+       
+    
+    def load_gripper_depth(self, other_file, max_depth=5):
+        if self.load_libero_file == "h5":
+            depth = other_file["observation"]["depth_wrist"][()]
+        elif self.load_libero_file == "npz":
+            depth = other_file["observation"]["depth_wrist"]
+        else:
+            raise NotImplementedError
+        
+        if depth.ndim >= 3 and depth.shape[-1] == 1:
+            depth = np.squeeze(depth, axis=-1)
+        
+        depth = np.clip(depth, 0.0, max_depth)
+        depth = depth / max_depth
+
+        return depth.astype(np.float32)
+       
     def load_action(self, other_file, max_rel_pos=0.02, max_rel_orn=0.05, magic_scaling_factor_pos=1.0, magic_scaling_factor_orn=1.0):
         if self.load_libero_file == "h5":
             action = other_file["action"][()]
@@ -2229,23 +2263,61 @@ class DiskLiberoDataset(Dataset):
         stacked_language = [s["lang"] for s in sample]
         episode_id = [s["episode_id"] for s in sample]
         text_tensors = self.text_fn(stacked_language)
+        image_depth_tensors = torch.from_numpy(
+            np.array([np.stack(s["depth_obs"]["rgb_static_depth"]) for s in sample])
+        ).float()  # shape: (B, T, H, W)
+
+        gripper_depth_tensors = torch.from_numpy(
+            np.array([np.stack(s["depth_obs"]["rgb_gripper_depth"]) for s in sample])
+        ).float()  # shape: (B, T, H, W)
+
+        # Add channel dimension: (B, T, 1, H, W)
+        image_depth_tensors = image_depth_tensors.unsqueeze(2)
+        gripper_depth_tensors = gripper_depth_tensors.unsqueeze(2)
+
+        B, T, C, H, W = image_depth_tensors.shape  # C=1
+        image_depth_tensors = image_depth_tensors.view(B * T, C, H, W)
+        gripper_depth_tensors = gripper_depth_tensors.view(B * T, C, H, W)
+
+        # Interpolate spatially
+        image_depth_tensors = F.interpolate(image_depth_tensors, size=(224, 224), mode="bilinear", align_corners=False)
+        gripper_depth_tensors = F.interpolate(gripper_depth_tensors, size=(224, 224), mode="bilinear", align_corners=False)
+
+        # Restore shape
+        image_depth_tensors = image_depth_tensors.view(B, T, C, 224, 224)
+        gripper_depth_tensors = gripper_depth_tensors.view(B, T, C, 224, 224)
+
 
         if self.rgb_pad != -1:
             bs, seq_len = image_tensors.shape[:2]
+            # concat channel-wise: (B, T, 4, H, W)
+            rgbd_static = torch.cat([image_tensors, image_depth_tensors], dim=2)
+
             if self.traj_cons:
-                image_tensors = self.rgb_shift.forward_traj(image_tensors)
+                rgbd_static = self.rgb_shift.forward_traj(rgbd_static)
             else:
-                image_tensors = image_tensors.view(bs*seq_len, *image_tensors.shape[2:])
-                image_tensors = self.rgb_shift(image_tensors)
-                image_tensors = image_tensors.view(bs, seq_len, *image_tensors.shape[1:])
+                rgbd_static = rgbd_static.view(bs * seq_len, *rgbd_static.shape[2:])
+                rgbd_static = self.rgb_shift(rgbd_static)
+                rgbd_static = rgbd_static.view(bs, seq_len, *rgbd_static.shape[1:])
+
+            # split back
+            image_tensors = rgbd_static[:, :, :3, :, :]
+            image_depth_tensors = rgbd_static[:, :, 3:, :, :]  # retains channel dim
+
         if self.gripper_pad != -1:
             bs, seq_len = gripper_tensors.shape[:2]
+            rgbd_gripper = torch.cat([gripper_tensors, gripper_depth_tensors], dim=2)
+
             if self.traj_cons:
-                gripper_tensors = self.gripper_shift.forward_traj(gripper_tensors)
+                rgbd_gripper = self.gripper_shift.forward_traj(rgbd_gripper)
             else:
-                gripper_tensors = gripper_tensors.view(bs * seq_len, *gripper_tensors.shape[2:])
-                gripper_tensors = self.gripper_shift(gripper_tensors)
-                gripper_tensors = gripper_tensors.view(bs, seq_len, *gripper_tensors.shape[1:])
+                rgbd_gripper = rgbd_gripper.view(bs * seq_len, *rgbd_gripper.shape[2:])
+                rgbd_gripper = self.gripper_shift(rgbd_gripper)
+                rgbd_gripper = rgbd_gripper.view(bs, seq_len, *rgbd_gripper.shape[1:])
+
+            gripper_tensors = rgbd_gripper[:, :, :3, :, :]
+            gripper_depth_tensors = rgbd_gripper[:, :, 3:, :, :]
+
         
         robot_obs = torch.zeros(1)
 
@@ -2264,10 +2336,12 @@ class DiskLiberoDataset(Dataset):
 
             action_tensors = actions
             image_tensors = image_tensors[:, :-(self.act_step-1)]
+            image_depth_tensors = image_depth_tensors[:, :-(self.act_step-1)]
             gripper_tensors = gripper_tensors[:, :-(self.act_step-1)]
+            gripper_depth_tensors = gripper_depth_tensors[:, :-(self.act_step-1)]
             state_tensors = state_tensors[:, :-(self.act_step-1)]
 
-        return image_tensors, text_tensors, action_tensors, gripper_tensors, state_tensors, robot_obs 
+        return image_tensors, text_tensors, action_tensors, gripper_tensors, state_tensors, robot_obs, image_depth_tensors, gripper_depth_tensors 
 
 def get_libero_pretrain_dataset(args, image_processor, tokenizer, epoch=0, floor=False):
     dataset_names = ["libero_10_converted"]#["libero_90_converted"]

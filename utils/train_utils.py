@@ -102,6 +102,8 @@ def train_one_epoch_calvin(
         
         # states
         states = batch_calvin[4].to(device_id, dtype=cast_dtype, non_blocking=True)
+        images_primary_depth = batch_calvin[6].to(device_id, dtype=cast_dtype, non_blocking=True)
+        images_wrist_depth = batch_calvin[7].to(device_id, dtype=cast_dtype, non_blocking=True)
         if args.gripper_width:
             input_states = torch.cat([states[..., :6], states[..., -2:]], dim=-1)
         else:
@@ -119,18 +121,32 @@ def train_one_epoch_calvin(
         input_image_wrist = images_wrist[:, :args.sequence_length, :]
         input_text_token = text_tokens[:, :args.sequence_length, :]
         input_state = input_states[:, :args.sequence_length, :]
+        input_image_primary_depth = images_primary_depth[:, :args.sequence_length, :]
+        input_image_wrist_depth = images_wrist_depth[:, :args.sequence_length, :]
 
         # label action
         label_actions = torch.cat([actions[:, j:args.sequence_length-args.atten_goal+j, :].unsqueeze(-2) for j in range(args.action_pred_steps)], dim=-2) 
 
         with autocast():  # image_primary, image_wrist, state, language_instruction
-            arm_pred_action, gripper_pred_action, image_pred, arm_pred_state, gripper_pred_state, loss_arm_action = model(
+            if args.seer_mini:
+                arm_pred_action, gripper_pred_action, image_pred, arm_pred_state, gripper_pred_state, loss_arm_action = model(
                 image_primary=input_image_primary,
                 image_wrist=input_image_wrist,
                 state=input_state,
                 text_token=input_text_token,
                 action=actions[:, :args.sequence_length, :],
+                images_primary_depth = input_image_primary_depth,
+                images_wrist_depth = input_image_wrist_depth,
             )
+            else:
+                arm_pred_action, gripper_pred_action, image_pred, arm_pred_state, gripper_pred_state, loss_arm_action = model(
+                    image_primary=input_image_primary,
+                    image_wrist=input_image_wrist,
+                    state=input_state,
+                    text_token=input_text_token,
+                    action=actions[:, :args.sequence_length, :],
+                    
+                )
         # loss_action
         if args.loss_action and args.action_pred_steps:
             loss_arm_action = torch.nn.functional.smooth_l1_loss(

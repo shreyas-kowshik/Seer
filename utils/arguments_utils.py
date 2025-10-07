@@ -277,6 +277,8 @@ def get_parser(is_eval=False):
                         help="Scale model size preset (controls transformer layers, hidden dim, etc.)")
     parser.add_argument("--seer_mini",action="store_true",
                         help="Use seer mini")
+    parser.add_argument("--use_depth", action="store_true",
+                        help="Use task text embeddings.")
 
     args = parser.parse_args()
 
