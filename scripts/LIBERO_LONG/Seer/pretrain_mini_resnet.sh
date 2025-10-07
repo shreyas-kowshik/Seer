@@ -2,9 +2,8 @@
 
 ### ===== CONFIGURE THESE PATHS ===== ###
 save_checkpoint_path="checkpoints/"
-root_dir="PATH_TO_PARENT_DIR_OF_LIBERO_CONVERTED"
-libero_path="PATH_TO_LIBERO"
-calvin_dataset_path="calvin/dataset/task_ABC_D"
+root_dir="/home/venky/Projects/Seer/data/LIBERO"
+libero_path="/home/venky/Projects/Seer/LIBERO"
 ### ================================== ###
 
 node=1
@@ -52,4 +51,5 @@ torchrun --nnodes=${node} --nproc_per_node=${node_num} --master_port=10211 train
     --use_text \
     --use_state \
     --use_wrist_view \
-    --model_size tiny
+    --model_size tiny \
+    --seer_mini
