@@ -1834,6 +1834,8 @@ class BaseLiberoDataset(Dataset):
         self.act_step = act_step
         logger.info(f"loading dataset at {root_dir}/{dataset_name}")
         logger.info("finished loading dataset")
+        # print(f"./data_info/{self.dataset_info}.json")
+        # exit()
         assert os.path.exists(f"./data_info/{self.dataset_info}.json")
         with open(f"./data_info/{self.dataset_info}.json", 'r') as f:
             self.episode_info_list = json.load(f)
@@ -2268,7 +2270,7 @@ class DiskLiberoDataset(Dataset):
         return image_tensors, text_tensors, action_tensors, gripper_tensors, state_tensors, robot_obs 
 
 def get_libero_pretrain_dataset(args, image_processor, tokenizer, epoch=0, floor=False):
-    dataset_names = ["libero_90_converted"]
+    dataset_names = ["libero_10_converted"]#["libero_90_converted"]
     shared_epoch = SharedEpoch(epoch=epoch)
     preprocess_image_fn = functools.partial(
         preprocess_image, image_processor=image_processor
@@ -2293,7 +2295,7 @@ def get_libero_pretrain_dataset(args, image_processor, tokenizer, epoch=0, floor
         max_window_size=args.max_window_size,
         primary_mode=args.primary_mode,
         small_size=args.small_size,
-        dataset_info='libero_90_converted',
+        dataset_info="libero_10_converted", #'libero_90_converted',
         gripper_width=args.gripper_width,
         load_libero_file=args.load_libero_file,
     )

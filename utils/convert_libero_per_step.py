@@ -69,6 +69,9 @@ class DatasetConverter:
         obs_wrist = np.array(demo_data['demo_{}'.format(i)]['obs']['eye_in_hand_rgb'])
         # obs_wrist = obs_wrist.transpose(0,3,1,2)
 
+        obs_depth = np.array(demo_data[f'demo_{i}']['obs']['agentview_depth'])                  # (T, H, W)
+        obs_wrist_depth = np.array(demo_data[f'demo_{i}']['obs']['eye_in_hand_depth'])  # (T, H, W)
+
         ### Get actions
         action = np.array(demo_data['demo_{}'.format(i)]['actions'])  # -1 open, 1 close
         
@@ -123,6 +126,9 @@ class DatasetConverter:
                 Image.fromarray(obs[step_index]).save(f'{step_dir}/image_primary.jpg')
                 ### image_wrist
                 Image.fromarray(obs_wrist[step_index]).save(f'{step_dir}/image_wrist.jpg')
+
+                observation_group.create_dataset(name='depth_primary', data=obs_depth[step_index])
+                observation_group.create_dataset(name='depth_wrist', data=obs_wrist_depth[step_index])
 
                 ## proprio
                 observation_group.create_dataset(name='proprio', data=joint_state[step_index])
@@ -226,9 +232,9 @@ def main(rank, port, num_worker, start_episode_idx=0, end_episode_idx=None):
         setup(rank, world_size=num_worker, port=port)
 
     global dataset_name
-    dataset_name = "libero_90" # "libero_10"
-    src_dir = f"/fs-computility/efm/shared/datasets/Banana/tianyang/Data/{dataset_name}"
-    tgt_dir = Path(f"/fs-computility/efm/shared/datasets/Banana/tianyang/Data/{dataset_name}_converted")
+    dataset_name = "libero_10" # "libero_90"
+    src_dir = f"/home/venky/Projects/Seer/data/LIBERO/{dataset_name}"
+    tgt_dir = Path(f"//home/venky/Projects/Seer/data/LIBERO/{dataset_name}_converted")
     tgt_dir.mkdir(exist_ok=True) 
 
     dataset_converter = DatasetConverter(

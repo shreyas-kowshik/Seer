@@ -254,6 +254,30 @@ def get_parser(is_eval=False):
         parser.add_argument("--pad_length", type=int, default=-1)
     parser.add_argument("--window_size", type=int, default=13)
     parser.add_argument("--vit_checkpoint_path", type=str)
+
+    parser.add_argument("--encoder_type", type=str, default="vit",
+                    choices=["vit", "resnet"],
+                    help="Choose visual encoder type (ViT=DINOv2 or ResNet).")
+
+    parser.add_argument("--dino_variant", type=str, default="dinov2_vits14",
+                        choices=["dinov2_vits14", "dinov2_vitb14", "dinov2_vitl14"],
+                        help="Which pretrained DINOv2 backbone to use when encoder_type=vit.")
+
+    parser.add_argument("--allow_obs_pred_with_resnet", action="store_true",
+                        help="Allow observation prediction when using ResNet encoder (disabled by default).")
+
+    parser.add_argument("--use_text", action="store_true",
+                        help="Use task text embeddings.")
+    parser.add_argument("--use_state", action="store_true",
+                        help="Use robot state embeddings.")
+    parser.add_argument("--use_wrist_view", action="store_true",
+                        help="Use wrist camera view (2-view input).")
+    parser.add_argument("--model_size", type=str, default="tiny",
+                        choices=["tiny", "small", "base"],
+                        help="Scale model size preset (controls transformer layers, hidden dim, etc.)")
+    parser.add_argument("--seer_mini",action="store_true",
+                        help="Use seer mini")
+
     args = parser.parse_args()
 
     return parser

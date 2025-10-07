@@ -14,3 +14,4 @@ omegaconf==2.1.2
 moviepy==1.0.3
 einops_exts
 numpy==1.23.1
+wandb

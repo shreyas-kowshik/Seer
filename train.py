@@ -14,6 +14,7 @@ from transformers import (
     get_linear_schedule_with_warmup,
 )
 from models.seer_model import SeerAgent
+from models.seer_model_mini import SeerAgentMini
 from utils.train_utils import get_checkpoint, train_one_epoch_calvin, get_ckpt_name
 from utils.arguments_utils import get_parser
 from utils.data_utils import get_calvin_dataset, get_calvin_val_dataset, get_droid_dataset, get_libero_pretrain_dataset, get_libero_finetune_dataset, get_real_finetune_dataset, get_oxe_dataset
@@ -50,28 +51,66 @@ def main(args):
     print("training batch size:", ptbs)
     args.run_name = args.run_name.replace("Seer", f"Seer_ptbs{ptbs}_{args.transformer_layers}layers_{args.transformer_heads}heads_hd{args.hidden_dim}")
     print("run_name:", args.run_name)
-    model = SeerAgent(
-        finetune_type=args.finetune_type,
-        clip_device=device_id,
-        vit_checkpoint_path=args.vit_checkpoint_path,
-        sequence_length=args.sequence_length,
-        num_resampler_query=args.num_resampler_query,
-        num_obs_token_per_image=args.num_obs_token_per_image,
-        calvin_input_image_size=args.calvin_input_image_size,
-        patch_size=args.patch_size,
-        action_pred_steps=args.action_pred_steps,
-        obs_pred=args.obs_pred,
-        atten_only_obs=args.atten_only_obs,
-        attn_robot_proprio_state=args.attn_robot_proprio_state,
-        atten_goal=args.atten_goal,
-        atten_goal_state=args.atten_goal_state,
-        mask_l_obs_ratio=args.mask_l_obs_ratio,
-        transformer_layers=args.transformer_layers,
-        hidden_dim=args.hidden_dim,
-        transformer_heads=args.transformer_heads,
-        phase=args.phase,
-        gripper_width=args.gripper_width,
-    )
+
+    if args.seer_mini:
+        model = SeerAgentMini(
+            finetune_type=args.finetune_type,
+            clip_device=device_id,
+            vit_checkpoint_path=args.vit_checkpoint_path,
+            sequence_length=args.sequence_length,
+            num_resampler_query=args.num_resampler_query,
+            num_obs_token_per_image=args.num_obs_token_per_image,
+            calvin_input_image_size=args.calvin_input_image_size,
+            patch_size=args.patch_size,
+            action_pred_steps=args.action_pred_steps,
+            obs_pred=args.obs_pred,
+            atten_only_obs=args.atten_only_obs,
+            attn_robot_proprio_state=args.attn_robot_proprio_state,
+            atten_goal=args.atten_goal,
+            atten_goal_state=args.atten_goal_state,
+            mask_l_obs_ratio=args.mask_l_obs_ratio,
+            transformer_layers=args.transformer_layers,
+            hidden_dim=args.hidden_dim,
+            transformer_heads=args.transformer_heads,
+            phase=args.phase,
+            gripper_width=args.gripper_width,
+
+            # 🔹 New arguments
+            encoder_type=args.encoder_type,
+            dino_variant=args.dino_variant,
+            allow_obs_pred_with_resnet=args.allow_obs_pred_with_resnet,
+            use_text=args.use_text,
+            use_state=args.use_state,
+            use_wrist_view=args.use_wrist_view,
+            model_size=args.model_size,
+            )
+        print(f"[INFO] Encoder: {args.encoder_type} ({args.dino_variant if args.encoder_type=='vit' else 'ResNet'}) | "
+            f"Use text: {args.use_text} | Use state: {args.use_state} | Wrist view: {args.use_wrist_view} | "
+            f"Model size: {args.model_size}")
+
+    else:
+        model = SeerAgent(
+            finetune_type=args.finetune_type,
+            clip_device=device_id,
+            vit_checkpoint_path=args.vit_checkpoint_path,
+            sequence_length=args.sequence_length,
+            num_resampler_query=args.num_resampler_query,
+            num_obs_token_per_image=args.num_obs_token_per_image,
+            calvin_input_image_size=args.calvin_input_image_size,
+            patch_size=args.patch_size,
+            action_pred_steps=args.action_pred_steps,
+            obs_pred=args.obs_pred,
+            atten_only_obs=args.atten_only_obs,
+            attn_robot_proprio_state=args.attn_robot_proprio_state,
+            atten_goal=args.atten_goal,
+            atten_goal_state=args.atten_goal_state,
+            mask_l_obs_ratio=args.mask_l_obs_ratio,
+            transformer_layers=args.transformer_layers,
+            hidden_dim=args.hidden_dim,
+            transformer_heads=args.transformer_heads,
+            phase=args.phase,
+            gripper_width=args.gripper_width,
+        )
     if args.finetune_type == "calvin":
         calvin_dataset = get_calvin_dataset(args, model.image_processor, clip, epoch=0, except_lang=args.except_lang)
     elif args.finetune_type == "droid":

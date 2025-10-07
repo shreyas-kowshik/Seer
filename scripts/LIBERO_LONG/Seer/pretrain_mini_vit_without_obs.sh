@@ -1,0 +1,56 @@
+#!/bin/bash
+
+### ===== CONFIGURE THESE PATHS ===== ###
+save_checkpoint_path="checkpoints/"
+root_dir="/home/venky/Projects/Seer/data/LIBERO"
+libero_path="/home/venky/Projects/Seer/LIBERO"
+### ================================== ###
+
+node=1
+node_num=1
+
+torchrun --nnodes=${node} --nproc_per_node=${node_num} --master_port=10211 train.py \
+    --traj_cons \
+    --rgb_pad 10 \
+    --gripper_pad 4 \
+    --gradient_accumulation_steps 8 \
+    --workers 16 \
+    --lr_scheduler cosine \
+    --save_every_iter 100000 \
+    --num_epochs 30 \
+    --seed 42 \
+    --batch_size 1 \
+    --precision fp32 \
+    --learning_rate 1e-4 \
+    --save_checkpoint \
+    --finetune_type libero_pretrain \
+    --root_dir ${root_dir} \
+    --wandb_project seer \
+    --weight_decay 1e-4 \
+    --num_resampler_query 6 \
+    --run_name libero_pretrain_dinov2_action_only \
+    --save_checkpoint_path ${save_checkpoint_path} \
+    --transformer_layers 12 \
+    --transformer_heads 8 \
+    --hidden_dim 256 \
+    --phase "pretrain" \
+    --sequence_length 11 \
+    --action_pred_steps 3 \
+    --future_steps 3 \
+    --atten_goal 4 \
+    --window_size 11 \
+    --loss_action \
+    --gripper_width \
+    --atten_only_obs \
+    --atten_goal_state \
+    --mask_l_obs_ratio 0.5 \
+    --warmup_epochs 1 \
+    --libero_path ${libero_path} \
+    --report_to_wandb \
+    --encoder_type vit \
+    --dino_variant dinov2_vits14 \
+    --use_text \
+    --use_state \
+    --use_wrist_view \
+    --model_size tiny \
+    --seer_mini
