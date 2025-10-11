@@ -8,7 +8,7 @@
 #SBATCH --error=/ocean/projects/cis250181p/venkatas/seer_libero_pretrain_depth/logs/%x_%j.err
 
 # ==== ENVIRONMENT SETUP ====
-set -e  # Exit on error for safety
+set -euo pipefail
 set -x  # (optional) Debug print of commands
 
 source /opt/packages/anaconda3/2024.10-1/etc/profile.d/conda.sh
@@ -27,7 +27,7 @@ libero_path="/ocean/projects/cis250181p/venkatas/Seer/LIBERO"
 mkdir -p ${save_checkpoint_path}
 
 # ==== DISTRIBUTED SETTINGS ====
-GPUS_PER_NODE=1
+GPUS_PER_NODE=2
 WORLD_SIZE=$((SLURM_NNODES * GPUS_PER_NODE))
 cd /ocean/projects/cis250181p/venkatas/Seer
 # ==== RUN TRAINING ====
