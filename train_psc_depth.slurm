@@ -1,9 +1,12 @@
 #!/bin/bash
 #SBATCH --job-name=seer_libero_pretrain_depth_clip_resnet_action_only   
-#SBATCH --nodes=1 
+#SBATCH -N 1
+#SBATCH -n 1
 #SBATCH -p GPU-shared                                                     
-#SBATCH --gpus=v100-32:1
-#SBATCH --time=48:00:00                                               
+#SBATCH --gpus v100-32:1
+#SBATCH -t 48:00:00
+#SBATCH -o logs/job_%j.out
+#SBATCH -e logs/job_%j.err                                               
 
 # ==== ENVIRONMENT SETUP ====
 module load anaconda3/2024.10-1 
