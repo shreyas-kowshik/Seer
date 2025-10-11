@@ -17,9 +17,9 @@ torchrun --nnodes=${node} --nproc_per_node=${node_num} --master_port=10211 train
     --workers 16 \
     --lr_scheduler cosine \
     --save_every_iter 100000 \
-    --num_epochs 30 \
+    --num_epochs 40 \
     --seed 42 \
-    --batch_size 1 \
+    --batch_size 3 \
     --precision fp32 \
     --learning_rate 1e-4 \
     --save_checkpoint \

@@ -130,7 +130,7 @@ def main(args):
         print("wandb_project :", args.wandb_project)
         print("wandb_entity :", args.wandb_entity)
         wandb.init(
-            mode="disabled",
+            # mode="disabled",
             project=args.wandb_project,
             entity=args.wandb_entity,
             name=args.run_name,
