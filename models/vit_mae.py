@@ -2,8 +2,12 @@ from functools import partial
 import numpy as np
 import torch
 import torch.nn as nn
-
+from clip.model import ModifiedResNet
+import torch.nn.functional as F
+import math
+import clip
 from timm.models.vision_transformer import PatchEmbed, Block
+from utils.depth_utils import *
 
 def get_2d_sincos_pos_embed(embed_dim, grid_size, cls_token=False):
     """
@@ -254,3 +258,222 @@ class MaskedAutoencoderViT(nn.Module):
         pred = self.forward_decoder(latent, ids_restore)  # [N, L, p*p*3]
         loss = self.forward_loss(imgs, pred, mask)
         return loss, pred, mask
+    
+
+class ModifiedResNetFeatures(ModifiedResNet):
+    def forward(self, x: torch.Tensor):
+        x = x.type(self.conv1.weight.dtype)
+        x = self.relu1(self.bn1(self.conv1(x)))
+        x = self.relu2(self.bn2(self.conv2(x)))
+        x0 = self.relu3(self.bn3(self.conv3(x)))
+        x = self.avgpool(x0)
+        x1 = self.layer1(x)
+        x2 = self.layer2(x1)
+        x3 = self.layer3(x2)
+        x4 = self.layer4(x3)
+        # We only need the final feature map for this approach
+        return x4
+
+def load_clip_features():
+    """Loads the modified CLIP RN50 as a feature extractor."""
+    clip_model, clip_transforms = clip.load("RN50")
+    state_dict = clip_model.state_dict()
+    layers = tuple([len(set(k.split(".")[2] for k in state_dict if k.startswith(f"visual.layer{b}"))) for b in [1, 2, 3, 4]])
+    output_dim = state_dict["text_projection"].shape[1]
+    heads = state_dict["visual.layer1.0.conv1.weight"].shape[0] * 32 // 64
+    backbone = ModifiedResNetFeatures(layers, output_dim, heads)
+    backbone.load_state_dict(clip_model.visual.state_dict())
+    normalize = clip_transforms.transforms[-1]
+    # Freeze the backbone
+    for param in backbone.parameters():
+        param.requires_grad = False
+    return backbone, normalize
+
+class RotaryPositionalEmbedding3D(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        assert dim % 2 == 0 and (dim // 3) % 2 == 0, \
+            "feature_dim must be divisible by 2 and (dim//3) must be even (i.e., feature_dim % 6 == 0)."
+
+        self.dim = dim
+        self.x_dim = dim // 3
+        self.y_dim = dim // 3
+        self.z_dim = dim - 2 * (dim // 3)
+
+        # (d/2,) each
+        inv_x = 1.0 / (10000 ** (torch.arange(0, self.x_dim, 2).float() / self.x_dim))
+        inv_y = 1.0 / (10000 ** (torch.arange(0, self.y_dim, 2).float() / self.y_dim))
+        inv_z = 1.0 / (10000 ** (torch.arange(0, self.z_dim, 2).float() / self.z_dim))
+
+        self.register_buffer("inv_freq_x", inv_x, persistent=False)
+        self.register_buffer("inv_freq_y", inv_y, persistent=False)
+        self.register_buffer("inv_freq_z", inv_z, persistent=False)
+
+    def forward(self, xyz_coords, features):
+        # xyz_coords: (B, S, 3), features: (B, S, D=self.dim)
+        B, S, _ = xyz_coords.shape
+        D = features.shape[-1]
+        assert D == self.dim, f"features dim {D} != rope dim {self.dim}"
+        # split features
+        fx, fy, fz = torch.split(features, [self.x_dim, self.y_dim, self.z_dim], dim=-1)
+        # ensure buffers are on the same device/dtype
+        inv_x = self.inv_freq_x.to(features.device, dtype=features.dtype)
+        inv_y = self.inv_freq_y.to(features.device, dtype=features.dtype)
+        inv_z = self.inv_freq_z.to(features.device, dtype=features.dtype)
+
+        # x,y,z: (B, S)
+        x = xyz_coords[..., 0]
+        y = xyz_coords[..., 1]
+        z = xyz_coords[..., 2]
+
+        # freq tensors: (B, S, d/2) using simple broadcasting (no einsum)
+        freqs_x = x.unsqueeze(-1) * inv_x.view(1, 1, -1)
+        freqs_y = y.unsqueeze(-1) * inv_y.view(1, 1, -1)
+        freqs_z = z.unsqueeze(-1) * inv_z.view(1, 1, -1)
+        # print("xyz cords shape: ",xyz_coords.shape)
+        # print("feature shape: ", features.shape)
+        # print("freqs x : ", freqs_x.shape)
+        # print("freqs y : ", freqs_y.shape)
+        # print("freqs z : ", freqs_z.shape)
+        # print("fx : ", fx.shape)
+        # print("fy  : ", fy.shape)
+        # print("fz  : ", fz.shape)
+        # apply rotary per axis
+        fx = self._apply_rotary_emb(fx, freqs_x)
+        fy = self._apply_rotary_emb(fy, freqs_y)
+        fz = self._apply_rotary_emb(fz, freqs_z)
+
+        return torch.cat((fx, fy, fz), dim=-1)
+
+    @staticmethod
+    def _apply_rotary_emb(features_axis, freqs):
+        """
+        features_axis: (B, S, d_axis), d_axis even
+        freqs:         (B, S, d_axis/2)
+        """
+        # pair last dim into 2
+        B, S, d = features_axis.shape
+        assert d % 2 == 0, "axis dim must be even for rotary pairing"
+        f = features_axis.reshape(B, S, d // 2, 2)        # (B, S, d/2, 2)
+
+        c1 = freqs.cos().unsqueeze(-1).squeeze(-1)                      # (B, S, d/2, 1)
+        s1 = freqs.sin().unsqueeze(-1).squeeze(-1) 
+        # print("f shape: ",f.shape)
+        # print("c shape: ", c1.shape)
+        # print("s shape: ", s1.shape)
+        try:
+            x = f[..., 0] * c1 - f[..., 1] * s1
+            y = f[..., 0] * s1 + f[..., 1] * c1
+        except Exception as e:
+            print("  [RoPE] EXCEPTION during rotary multiply:", repr(e))
+            # print("  f:", f.shape, f.dtype, f.device)
+            # print("  c:", c1.shape, c1.dtype, c1.device)
+            # print("  s:", s1.shape, s1.dtype, s1.device)
+            # # Drop to pdb so you can poke tensors
+            # _pdb_here()
+            raise
+
+        return torch.stack((x.squeeze(-1), y.squeeze(-1)), dim=-1).flatten(-2)  # (B, S, d)
+
+    
+
+class RGBD_CLIP_RoPE_Embedder(nn.Module):
+    def __init__(self, feature_dim, num_fps_samples=128):
+        super().__init__()
+        self.feature_dim = feature_dim
+        self.num_fps_samples = num_fps_samples
+
+        # 1. Load pre-trained CLIP RN50 feature extractor
+        self.clip_backbone, self.clip_normalize = load_clip_features()
+        
+        # 2. Projector to map CLIP features to the desired hidden dimension
+        # The final layer of RN50 outputs 2048 channels
+        self.feature_projector = nn.Linear(2048, self.feature_dim)
+        
+        # 3. RoPE Module
+        self.rope = RotaryPositionalEmbedding3D(dim=self.feature_dim)
+        print("RGBD Encoder: Final feature dim: ", feature_dim)
+
+    def forward(self, rgb, depth, intrinsics, extrinsics):
+        # Input shapes: rgb (B, C, H, W), depth (B, 1, H, W), intrinsics (B, 3, 3)
+        B, _, H_in, W_in = rgb.shape
+        
+        # 1. Extract visual features from RGB
+        # rgb_normalized = self.clip_normalize(rgb)
+        visual_features = self.clip_backbone(rgb) # (B, 2048, H_feat, W_feat)
+        
+        # 2. Project to target dimension
+        # (B, 2048, H_feat, W_feat) -> (B, H_feat*W_feat, 2048) -> (B, H_feat*W_feat, D)
+        visual_tokens = visual_features.flatten(2).permute(0, 2, 1)
+        projected_tokens = self.feature_projector(visual_tokens)
+
+        # 3. Unproject depth to point cloud
+        _, _, H_feat, W_feat = visual_features.shape
+        depth_downsampled = F.interpolate(depth, size=(H_feat, W_feat), mode='bilinear', align_corners=False)
+        
+
+        # Scale intrinsics to match downsampled resolution
+        scale_factor = H_in / H_feat
+        intrinsics_scaled = intrinsics.clone()
+        intrinsics_scaled[:, :2, :] /= scale_factor
+        
+        point_cloud_camera_frame = depth_to_pointcloud(depth_downsampled, intrinsics_scaled)
+        xyz_coords_camera_frame = point_cloud_camera_frame.flatten(1, 2) # (B, N, 3)
+        
+        Bf, Hf2, Wf2, _ = point_cloud_camera_frame.shape
+        assert Hf2 == H_feat and Wf2 == W_feat
+        assert xyz_coords_camera_frame.shape == (Bf, Hf2*Wf2, 3)
+
+        if extrinsics is not None:
+            # extrinsics is a (B, 4, 4) matrix [R | T]
+            #                                  [0 | 1]
+            R = extrinsics[:, :3, :3]  # (B, 3, 3) Rotation
+            T = extrinsics[:, :3, 3]   # (B, 3) Translation
+
+            # Apply transformation: P_world = R @ P_camera + T
+            # (B, N, 3) = (B, 3, 3) @ (B, N, 3).transpose(1,2) -> (B, 3, N) -> transpose -> (B, N, 3)
+            xyz_coords_world_frame = torch.bmm(xyz_coords_camera_frame, R.transpose(1, 2)) + T.unsqueeze(1)
+            
+            # This is now our definitive set of coordinates
+            xyz_coords = xyz_coords_world_frame
+        else:
+            # If no extrinsics are provided, operate in the camera frame
+            xyz_coords = xyz_coords_camera_frame
+
+        # 4. Farthest Point Sampling (FPS) to select a subset of tokens
+        # We sample based on 3D position for geometric coverage
+        fps_indices = farthest_point_sample(xyz_coords, self.num_fps_samples) # (B, num_samples)
+        assert fps_indices.dtype == torch.long
+        # print("fps indices shape: ",fps_indices.shape)
+
+        idx_tok = fps_indices.unsqueeze(-1).expand(-1, -1, projected_tokens.size(-1))  # (B, S, D)
+        sampled_tokens = projected_tokens.gather(1, idx_tok)  # (B, S, D)
+        # print("sampled tokens shape:" , sampled_tokens.shape)
+        idx_xyz = fps_indices.unsqueeze(-1).expand(-1, -1, 3)  # (B, S, 3)
+        sampled_xyz = xyz_coords.gather(1, idx_xyz)  # (B, S, 3)
+        # print("sampled xyz shape: ", sampled_xyz.shape)
+        # 5. Apply RoPE to the sampled tokens
+        assert sampled_tokens.shape[:2] == sampled_xyz.shape[:2], \
+        f"tokens {sampled_tokens.shape} vs xyz {sampled_xyz.shape}"
+
+        embedded_tokens = self.rope(sampled_xyz, sampled_tokens)
+        
+        return embedded_tokens 
+
+# import os, sys, torch
+
+# def _is_rank0():
+#     try:
+#         import torch.distributed as dist
+#         return (not dist.is_available()) or (not dist.is_initialized()) or dist.get_rank() == 0
+#     except Exception:
+#         return True
+
+# def _pdb_here():
+#     # use pdb++ if installed; else builtin pdb
+#     if _is_rank0():
+#         try:
+#             import pdbpp as pdb  # type: ignore
+#         except Exception:
+#             import pdb
+#         pdb.set_trace()

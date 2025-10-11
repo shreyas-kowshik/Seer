@@ -104,6 +104,11 @@ def train_one_epoch_calvin(
         states = batch_calvin[4].to(device_id, dtype=cast_dtype, non_blocking=True)
         images_primary_depth = batch_calvin[6].to(device_id, dtype=cast_dtype, non_blocking=True)
         images_wrist_depth = batch_calvin[7].to(device_id, dtype=cast_dtype, non_blocking=True)
+        intr_static = batch_calvin[8].to(device_id, dtype=cast_dtype, non_blocking=True)
+        intr_gripper = batch_calvin[9].to(device_id, dtype=cast_dtype, non_blocking=True)
+        extr_static = batch_calvin[10].to(device_id, dtype=cast_dtype, non_blocking=True)
+        extr_gripper = batch_calvin[11].to(device_id, dtype=cast_dtype, non_blocking=True)
+
         if args.gripper_width:
             input_states = torch.cat([states[..., :6], states[..., -2:]], dim=-1)
         else:
@@ -123,7 +128,13 @@ def train_one_epoch_calvin(
         input_state = input_states[:, :args.sequence_length, :]
         input_image_primary_depth = images_primary_depth[:, :args.sequence_length, :]
         input_image_wrist_depth = images_wrist_depth[:, :args.sequence_length, :]
+        
+    
+        input_camera_intrinsics_primary = intr_static[:, :args.sequence_length, :]
+        input_camera_extrinsics_primary = extr_static[:, :args.sequence_length, :]
 
+        input_camera_intrinsics_wrist = intr_gripper[:, :args.sequence_length, :]
+        input_camera_extrinsics_wrist = extr_gripper[:, :args.sequence_length, :]
         # label action
         label_actions = torch.cat([actions[:, j:args.sequence_length-args.atten_goal+j, :].unsqueeze(-2) for j in range(args.action_pred_steps)], dim=-2) 
 
@@ -135,8 +146,12 @@ def train_one_epoch_calvin(
                 state=input_state,
                 text_token=input_text_token,
                 action=actions[:, :args.sequence_length, :],
-                images_primary_depth = input_image_primary_depth,
-                images_wrist_depth = input_image_wrist_depth,
+                images_primary_depth=input_image_primary_depth,
+                images_wrist_depth=input_image_wrist_depth,
+                intrinsics_primary=input_camera_intrinsics_primary,
+                intrinsics_wrist=input_camera_intrinsics_wrist,
+                extrinsics_primary=input_camera_extrinsics_primary,
+                extrinsics_wrist=input_camera_extrinsics_wrist
             )
             else:
                 arm_pred_action, gripper_pred_action, image_pred, arm_pred_state, gripper_pred_state, loss_arm_action = model(

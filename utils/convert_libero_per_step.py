@@ -89,6 +89,10 @@ class DatasetConverter:
 
         # task emb
         # task_emb = self.lang_model.encode(language_instructions)
+        cam_intr_agent = np.array(demo_data[f'demo_{i}']['obs']['camera_intrinsics']['agentview'])
+        cam_intr_wrist = np.array(demo_data[f'demo_{i}']['obs']['camera_intrinsics']['eye_in_hand'])
+        cam_extr_agent = np.array(demo_data[f'demo_{i}']['obs']['camera_extrinsics']['agentview'])
+        cam_extr_wrist = np.array(demo_data[f'demo_{i}']['obs']['camera_extrinsics']['eye_in_hand'])
 
         # get episode length
         num_steps = obs.shape[0]
@@ -141,6 +145,18 @@ class DatasetConverter:
 
                 ## gripper position (n, 2)
                 observation_group.create_dataset(name='gripper_position', data=gripper_position[step_index])
+                 # --- NEW: camera parameters ---
+                cam_group = observation_group.create_group('camera')
+                intr_group = cam_group.create_group('intrinsics')
+                extr_group = cam_group.create_group('extrinsics')
+
+                # ✅ Store intrinsics once (they’re constant)
+                intr_group.create_dataset('primary', data=cam_intr_agent[step_index])
+                intr_group.create_dataset('wrist', data=cam_intr_wrist[step_index])
+
+                # ✅ Store per-frame extrinsics
+                extr_group.create_dataset('primary', data=cam_extr_agent[step_index])
+                extr_group.create_dataset('wrist', data=cam_extr_wrist[step_index])
 
     def convert_origin_dataset_to_target(self, dataset_by_task):
         # /dataset_0

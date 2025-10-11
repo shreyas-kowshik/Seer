@@ -9,7 +9,7 @@ from torch import nn
 import torch.nn.functional as F
 import clip
 import numpy as np
-from models.vit_mae import MaskedAutoencoderViT
+from models.vit_mae import MaskedAutoencoderViT, RGBD_CLIP_RoPE_Embedder
 from models.perceiver_resampler import PerceiverResampler
 from models.gpt2 import GPT2Model
 from transformers import GPT2Config
@@ -127,7 +127,7 @@ class SeerSize:
 SEER_PRESETS = {
     "base":  SeerSize("base", 384, 24, 12, 6, 9, 3, "dinov2_vitb14"),
     "small": SeerSize("small", 256, 8,  8,  4, 6, 1, "dinov2_vits14"),
-    "tiny":  SeerSize("tiny",  256, 6,  8,  3, 4, 1, "dinov2_vits14"),
+    "tiny":  SeerSize("tiny",  192, 6,  8,  3, 4, 1, "dinov2_vits14"),
 }
 # ---------------------------------------------------------------------------
 
@@ -191,6 +191,7 @@ class SeerAgentMini(nn.Module):
         self.use_state = use_state
         self.use_wrist_view = use_wrist_view
         self.allow_obs_pred_with_resnet = allow_obs_pred_with_resnet
+        self.use_depth = use_depth
         
         # --- apply preset if provided ---
         if model_size is not None:
@@ -231,8 +232,28 @@ class SeerAgentMini(nn.Module):
         # ---------------- IMAGE ENCODER(S) ----------------
         self.NUM_OBS_TOKEN_PER_IMAGE = num_obs_token_per_image
         self.NUM_OBS_TOKEN = self.NUM_OBS_TOKEN_PER_IMAGE * (2 if self.use_wrist_view else 1)
+        
+        if self.use_depth:
+            # --- Path 1: Depth-Aware CLIP-RoPE Embedder ---
+            assert self.hidden_dim % 6 == 0, "For 3D RoPE, hidden_dim must be divisible by 6."
+            
+            # Store FPS counts to be used by _compute_num_A
+            self.num_fps_samples_primary = 32
+            self.num_fps_samples_wrist = 32
+            
+            self.image_primary_embedder_depth = RGBD_CLIP_RoPE_Embedder(
+                feature_dim=self.hidden_dim, num_fps_samples=self.num_fps_samples_primary
+            )
+            if self.use_wrist_view:
+                self.image_wrist_embedder_depth = RGBD_CLIP_RoPE_Embedder(
+                    feature_dim=self.hidden_dim, num_fps_samples=self.num_fps_samples_wrist
+                )
+            print("[INFO] Using Depth-Aware CLIP-RoPE Embedder.")
+            self.vision_encoder = None
+            self.perceiver_resampler = None
+            self.NUM_RESAMPLER_QUERY = 0
 
-        if self.encoder_type == "vit":
+        elif self.encoder_type == "vit":
             # -------------------- DINOv2 VISION ENCODER --------------------
             # choose variant; default to ViT-S/14 (small)
             from dinov2.models.vision_transformer import vit_small, vit_base, vit_large
@@ -401,7 +422,14 @@ class SeerAgentMini(nn.Module):
         t = 1 if self.use_text else 0
         s = 1 if self.use_state else 0
         # image tokens
-        if self.encoder_type == "vit":
+        if self.use_depth:
+            # For the depth path, tokens are determined by FPS samples
+            img_latents = self.num_fps_samples_primary
+            if self.use_wrist_view:
+                img_latents += self.num_fps_samples_wrist
+            cls_tokens = 0 # No CLS tokens in this path
+
+        elif self.encoder_type == "vit":
             views = 2 if self.use_wrist_view else 1
             img_latents = self.NUM_RESAMPLER_QUERY * views
             cls_tokens = views  # one CLS per view
@@ -439,7 +467,11 @@ class SeerAgentMini(nn.Module):
     def _init_model_type(self):
         """Caches the torch dtype of key model components for later mixed-precision type casting."""
         # Vision encoder type (may differ for DINOv2 / ResNet)
-        self.vision_encoder_type = next(self.vision_encoder.parameters()).type()
+        if self.use_depth:
+            # For the depth path, get the dtype from the new embedder
+            self.vision_encoder_type = next(self.image_primary_embedder_depth.parameters()).type()
+        else:
+            self.vision_encoder_type = next(self.vision_encoder.parameters()).type()
 
         # Some encoders (e.g. ResNet) don’t have a perceiver
         if hasattr(self, "perceiver_resampler") and self.perceiver_resampler is not None:
@@ -493,7 +525,10 @@ class SeerAgentMini(nn.Module):
 
     # ------------------------------------------------------------------------
 
-    def forward(self, image_primary, image_wrist, state, text_token, action=None, images_primary_depth=None, images_wrist_depth=None):
+    def forward(self, image_primary, image_wrist, state, text_token, action=None, 
+            images_primary_depth=None, images_wrist_depth=None, 
+            intrinsics_primary=None, intrinsics_wrist=None,
+            extrinsics_primary=None, extrinsics_wrist=None):
         # rebuild attention mask each forward during training
         if self.training and self.phase == "pretrain":
             this_num_obs_token = (self.NUM_OBS_TOKEN if self.obs_pred else 0)
@@ -549,7 +584,61 @@ class SeerAgentMini(nn.Module):
             state_embedding = state_embedding.view(B, S, -1, self.hidden_dim)
 
         # -------- image features --------
-        if self.encoder_type == "vit":
+        if self.use_depth:
+            # --- Path 1: Depth-Aware CLIP-RoPE Embedder ---
+            assert images_primary_depth is not None and intrinsics_primary is not None and extrinsics_primary is not None, \
+                "Depth images and intrinsics must be provided when use_depth is True."
+            # Match dtype with encoder
+            enc_param = next(self.image_primary_embedder_depth.parameters())
+            if image_primary.type() != enc_param.type():
+                image_primary = image_primary.type(enc_param.type())
+                if self.use_wrist_view:
+                    image_wrist = image_wrist.type(enc_param.type())
+
+            ip_flat = image_primary.flatten(0, 1)
+            ipd_flat = images_primary_depth.flatten(0, 1)
+
+            # print("debug: Seer agentmini:forward:ip_flat", ip_flat.shape, ip_flat.dtype)
+            # print("debug: Seer agentmini:forward:ipd_flat", ipd_flat.shape, ipd_flat.dtype)
+            
+            # Intrinsics are static, so we repeat them for the sequence
+            intrinsics_primary_seq = intrinsics_primary.flatten(0, 1) #.unsqueeze(1).repeat(1, S_AND_FUTURE, 1, 1).flatten(0, 1)
+            # print("debug: Seer agentmini:forward:intrinsic", intrinsics_primary_seq.shape, intrinsics_primary_seq.dtype)
+            
+            # Extrinsics are also static for the primary cam, so we repeat
+            extrinsics_primary_seq = extrinsics_primary.flatten(0, 1) #.unsqueeze(1).repeat(1, S_AND_FUTURE, 1, 1).flatten(0, 1)
+            # print("debug: Seer agentmini:forward:extrinsic", extrinsics_primary_seq.shape, extrinsics_primary_seq.dtype)
+
+            ip_emb_flat = self.image_primary_embedder_depth(
+                ip_flat, ipd_flat, intrinsics_primary_seq, extrinsics_primary_seq
+            )
+            num_ip_tokens = ip_emb_flat.shape[1]
+            ip_emb = ip_emb_flat.view(B, S_AND_FUTURE, num_ip_tokens, self.hidden_dim)[:, :S, :, :]
+
+            # --- WRIST CAMERA ---
+            if self.use_wrist_view:
+                # extrinsics_wrist has shape (B, S_AND_FUTURE, 4, 4)
+                iw_flat = image_wrist.flatten(0, 1)
+                iwd_flat = images_wrist_depth.flatten(0, 1)
+                
+                # Intrinsics are static for the wrist cam sensor itself
+                intrinsics_wrist_seq = intrinsics_wrist.flatten(0, 1) #.unsqueeze(1).repeat(1, S_AND_FUTURE, 1, 1).flatten(0, 1)
+
+                extrinsics_wrist_seq = extrinsics_wrist.flatten(0, 1)
+
+                iw_emb_flat = self.image_wrist_embedder_depth(
+                    iw_flat, iwd_flat, intrinsics_wrist_seq, extrinsics_wrist_seq
+                )
+                
+                num_iw_tokens = iw_emb_flat.shape[1]
+                iw_emb = iw_emb_flat.view(B, S_AND_FUTURE, num_iw_tokens, self.hidden_dim)[:, :S, :, :]
+                image_embedding = torch.cat((ip_emb, iw_emb), dim=2)
+            else:
+                image_embedding = ip_emb
+                
+            image_cls_token_embedding = None
+
+        elif self.encoder_type == "vit":
             # Match dtype with encoder
             enc_param = next(self.vision_encoder.parameters())
             if image_primary.type() != enc_param.type():

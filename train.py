@@ -151,7 +151,8 @@ def main(args):
             model.image_decoder.bfloat16()
             model.image_decoder_obs_pred_projector.bfloat16()
     model.clip_model.requires_grad_(False)
-    model.vision_encoder.requires_grad_(False)
+    if not args.use_depth:
+        model.vision_encoder.requires_grad_(False)
     total_params, trainable_params = count_parameters(model)
     print("total_params: {} M".format(total_params/1024/1024))
     print("trainable_params: {} M".format(trainable_params/1024/1024))

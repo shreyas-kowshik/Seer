@@ -80,6 +80,7 @@ obs_config = DictConfig(
         "state_obs": ["robot_obs"],
         "actions": ["rel_actions"],
         "language": ["language"],
+        "camera_params":["camera_intrinsics_static", "camera_intrinsics_gripper", "camera_extrinsics_static", "camera_extrinsics_gripper"]
     }
 )
 
@@ -257,6 +258,30 @@ def process_actions(
     else:  # episode loader
         seq_acts = torch.from_numpy(episode[action_key][seq_idx : seq_idx + window_size]).float()
     return {"actions": seq_acts}
+
+def process_camera_params(
+    episode: Dict[str, np.ndarray],
+    observation_space: DictConfig,
+    transforms: Dict,
+    seq_idx: int = 0,
+    window_size: int = 0,
+) -> Dict[str, Dict[str, torch.Tensor]]:
+
+    camera_params = {}
+
+    for cam_name in observation_space["camera_params"]:
+        intr = episode[cam_name]
+        if window_size == 0 and seq_idx == 0:  # single file loader
+            intr_tensor = torch.from_numpy(intr).float()
+        else:  # episode loader (slice window)
+            intr_tensor = torch.from_numpy(intr[seq_idx : seq_idx + window_size]).float()
+
+        if "camera_params" in transforms and cam_name in transforms["camera_params"]:
+            intr_tensor = transforms["camera_params"][cam_name](intr_tensor)
+
+        camera_params[cam_name] = intr_tensor
+
+    return camera_params
 
 def process_language(episode: Dict[str, np.ndarray], transforms: Dict, with_lang: bool) -> Dict[str, torch.Tensor]:
     seq_lang = {"lang": torch.empty(0)}
@@ -1969,6 +1994,12 @@ class BaseLiberoDataset(Dataset):
                 }
             }
         )
+        if "camera_params" in self.observation_space:
+            for key in self.observation_space["camera_params"]:
+                seq.update({key: self._pad_with_repetition(seq[key], pad_size, head)
+                    }
+                )
+
         #  todo: find better way of distinguishing rk and play action spaces
         if not self.relative_actions:
             if head:
@@ -2070,6 +2101,8 @@ class BaseLiberoDataset(Dataset):
             data_dict["scene_obs"] = self.load_scene_obs(episode_id, str_step_id)
             data_dict["rgb_static_depth"] = self.load_primary_depth(other_file)
             data_dict['rgb_gripper_depth'] = self.load_gripper_depth(other_file)
+            data_dict["camera_intrinsics_static"] , data_dict["camera_intrinsics_gripper"]= self.load_camera_intrinsics(other_file)
+            data_dict["camera_extrinsics_static"], data_dict['camera_extrinsics_gripper'] = self.load_camera_extrinsics(other_file)
             episodes.append(data_dict)
         keys = list(chain(*self.observation_space.values()))
         keys.remove("language")
@@ -2085,18 +2118,52 @@ class BaseLiberoDataset(Dataset):
         info = get_state_info_dict(episode)
         info["use_for_aux_lang_loss"] = False
         seq_lang = self.process_language(episode, self.transforms, self.with_lang)
+        seq_camera_params = process_camera_params(episode, self.observation_space, self.transforms)
+
         seq_dict = {
             **seq_state_obs,
             **seq_rgb_obs,
             **seq_depth_obs,
+            **seq_camera_params,
             **seq_acts,
             **info,
-            **seq_lang,
+            **seq_lang, 
         }  
         seq_dict["idx"] = idx  
         seq_dict["episode_id"] = episode_id
 
         return seq_dict
+
+    def load_camera_intrinsics(self, other_file):
+        if self.load_libero_file == "h5":
+            intr_group = other_file["observation"]["camera"]["intrinsics"]
+            intr_static = np.array(intr_group["primary"][()])
+            intr_wrist = np.array(intr_group["wrist"][()])
+        elif self.load_libero_file == "npz":
+            intr_static = np.array(other_file["observation_camera_intrinsics_primary"])
+            intr_wrist = np.array(other_file["observation_camera_intrinsics_wrist"])
+        else:
+            raise NotImplementedError
+
+        return intr_static.astype(np.float32),intr_wrist.astype(np.float32)
+    
+    
+    def load_camera_extrinsics(self, other_file):
+
+        if self.load_libero_file == "h5":
+            extr_group = other_file["observation"]["camera"]["extrinsics"]
+            extr_static = np.array(extr_group["primary"][()])
+            extr_wrist = np.array(extr_group["wrist"][()])
+        elif self.load_libero_file == "npz":
+            extr_static = np.array(other_file["observation_camera_extrinsics_primary"])
+            extr_wrist = np.array(other_file["observation_camera_extrinsics_wrist"])
+        else:
+            raise NotImplementedError
+
+        return  extr_static.astype(np.float32), extr_wrist.astype(np.float32)
+        
+        
+
 
     def load_primary_rgb(self, episode_id, step_id, primary_mode="image_primary"):
         image_primary_path = f'{self.dataset_path}/episodes/{episode_id}/steps/{step_id}/{primary_mode}.jpg'
@@ -2318,7 +2385,12 @@ class DiskLiberoDataset(Dataset):
             gripper_tensors = rgbd_gripper[:, :, :3, :, :]
             gripper_depth_tensors = rgbd_gripper[:, :, 3:, :, :]
 
-        
+         # --- Camera intrinsics & extrinsics ---
+        intr_static = torch.stack([s["camera_intrinsics_static"] for s in sample])
+        intr_gripper = torch.stack([s["camera_intrinsics_gripper"] for s in sample])
+        extr_static = torch.stack([s["camera_extrinsics_static"] for s in sample])
+        extr_gripper = torch.stack([s["camera_extrinsics_gripper"] for s in sample])
+       
         robot_obs = torch.zeros(1)
 
         if self.act_step != 1:
@@ -2341,7 +2413,7 @@ class DiskLiberoDataset(Dataset):
             gripper_depth_tensors = gripper_depth_tensors[:, :-(self.act_step-1)]
             state_tensors = state_tensors[:, :-(self.act_step-1)]
 
-        return image_tensors, text_tensors, action_tensors, gripper_tensors, state_tensors, robot_obs, image_depth_tensors, gripper_depth_tensors 
+        return image_tensors, text_tensors, action_tensors, gripper_tensors, state_tensors, robot_obs, image_depth_tensors, gripper_depth_tensors, intr_static, intr_gripper, extr_static, extr_gripper
 
 def get_libero_pretrain_dataset(args, image_processor, tokenizer, epoch=0, floor=False):
     dataset_names = ["libero_10_converted"]#["libero_90_converted"]
