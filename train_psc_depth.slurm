@@ -1,11 +1,9 @@
 #!/bin/bash
-#SBATCH --job-name=seer_libero_pretrain_depth_clip_resnet_action_only
-#SBATCH --nodes=1
-#SBATCH --partition=GPU-shared
-#SBATCH --time=48:00:00
-#SBATCH --gpus=2
-#SBATCH --output=~/seer_logs/%x_%j.out
-#SBATCH --error=~/seer_logs/%x_%j.err
+#SBATCH -N 1
+#SBATCH -p GPU-shared
+#SBATCH -t 48:00:00
+#SBATCH --gpus=v100-32:2
+
 
 # ==== ENVIRONMENT SETUP ====
 set -euo pipefail
