@@ -26,9 +26,7 @@ srun --ntasks=${WORLD_SIZE} \
       python -u -m torch.distributed.run \
        --nnodes=${SLURM_NNODES} \
        --nproc_per_node=${GPUS_PER_NODE} \
-       --rdzv_backend=c10d \
-       --rdzv_endpoint=$(scontrol show hostnames $SLURM_NODELIST | head -n 1):29500 \
-       --master_port=29500 \
+       --use_env \
        train.py \
          --traj_cons \
          --rgb_pad 10 \
