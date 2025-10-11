@@ -1,16 +1,26 @@
 #!/bin/bash
-#SBATCH --job-name=seer_libero_pretrain_depth_clip_resnet_action_only   
-#SBATCH -N 1
-#SBATCH -p GPU-shared 
-#SBATCH -t 48:00:00
+#SBATCH --job-name=seer_libero_pretrain_depth_clip_resnet_action_only
+#SBATCH --nodes=1
+#SBATCH --partition=GPU-shared
+#SBATCH --time=48:00:00
 #SBATCH --gpus=1
-#SBATCH -o logs/job_%j.out
-#SBATCH -e logs/job_%j.err                                               
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=32G
+#SBATCH --output=/ocean/projects/cis250181p/venkatas/seer_libero_pretrain_depth/logs/%x_%j.out
+#SBATCH --error=/ocean/projects/cis250181p/venkatas/seer_libero_pretrain_depth/logs/%x_%j.err
 
 # ==== ENVIRONMENT SETUP ====
+set -e  # Exit on error for safety
+set -x  # (optional) Debug print of commands
+
 module load anaconda3/2024.10-1 
 conda activate seer
 
+# Verify environment
+echo "Running on node: $(hostname)"
+which python
+python --version
+mkdir -p /ocean/projects/cis250181p/venkatas/seer_libero_pretrain_depth/logs
 # ==== CONFIGURE PATHS ====
 save_checkpoint_path="/ocean/projects/cis250181p/venkatas/seer_libero_pretrain_depth/checkpoints"
 root_dir="/ocean/projects/cis250181p/venkatas/Seer/data/LIBERO"
@@ -21,7 +31,7 @@ mkdir -p ${save_checkpoint_path}
 # ==== DISTRIBUTED SETTINGS ====
 GPUS_PER_NODE=1
 WORLD_SIZE=$((SLURM_NNODES * GPUS_PER_NODE))
-
+cd /ocean/projects/cis250181p/venkatas/Seer
 # ==== RUN TRAINING ====
 srun --ntasks=${WORLD_SIZE} \
      --ntasks-per-node=${GPUS_PER_NODE} \
