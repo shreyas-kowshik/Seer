@@ -11,7 +11,7 @@
 set -e  # Exit on error for safety
 set -x  # (optional) Debug print of commands
 
-module load anaconda3/2024.10-1 
+source /opt/packages/anaconda3/2024.10-1/etc/profile.d/conda.sh
 conda activate seer
 
 # Verify environment
