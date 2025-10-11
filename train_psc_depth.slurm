@@ -3,9 +3,7 @@
 #SBATCH --nodes=1
 #SBATCH --partition=GPU-shared
 #SBATCH --time=48:00:00
-#SBATCH --gpus=1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=32G
+#SBATCH --gpus=2
 #SBATCH --output=/ocean/projects/cis250181p/venkatas/seer_libero_pretrain_depth/logs/%x_%j.out
 #SBATCH --error=/ocean/projects/cis250181p/venkatas/seer_libero_pretrain_depth/logs/%x_%j.err
 
