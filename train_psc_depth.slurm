@@ -1,24 +1,13 @@
 #!/bin/bash
-#SBATCH --job-name=seer_libero_pretrain_depth_clip_resnet_action_only   # Job name
+#SBATCH --job-name=seer_libero_pretrain_depth_clip_resnet_action_only   
 #SBATCH --nodes=1 
-#SBATCH -p GPU-shared                                                     # Number of nodes
+#SBATCH -p GPU-shared                                                     
 #SBATCH --gpus=v100-32:1
-#SBATCH --cpus-per-task=16                                              # CPU cores per task
-#SBATCH --mem=64G                                                      # Memory per node
-#SBATCH --time=48:00:00                                                # Walltime (hh:mm:ss)
-#SBATCH --output=/ocean/projects/cis250181p/venkatas/seer_libero_pretrain_depth/logs/%x_%j.out
-#SBATCH --error=/ocean/projects/cis250181p/venkatas/seer_libero_pretrain_depth/logs/%x_%j.err
-
-
-export NCCL_DEBUG=INFO
-export NCCL_ASYNC_ERROR_HANDLING=1
-export NCCL_SOCKET_IFNAME=^lo,docker
+#SBATCH --time=48:00:00                                               
 
 # ==== ENVIRONMENT SETUP ====
 module load anaconda3/2024.10-1 
 conda activate seer
-
-mkdir -p /ocean/projects/cis250181p/venkatas/seer_libero_pretrain_depth/logs
 
 # ==== CONFIGURE PATHS ====
 save_checkpoint_path="/ocean/projects/cis250181p/venkatas/seer_libero_pretrain_depth/checkpoints"
