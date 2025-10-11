@@ -1,10 +1,9 @@
 #!/bin/bash
 #SBATCH --job-name=seer_libero_pretrain_depth_clip_resnet_action_only   
 #SBATCH -N 1
-#SBATCH -n 1
-#SBATCH -p GPU-shared                                                     
-#SBATCH --gpus v100-32:1
+#SBATCH -p GPU-shared 
 #SBATCH -t 48:00:00
+#SBATCH --gpus=1
 #SBATCH -o logs/job_%j.out
 #SBATCH -e logs/job_%j.err                                               
 
