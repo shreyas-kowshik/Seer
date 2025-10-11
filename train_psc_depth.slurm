@@ -4,8 +4,8 @@
 #SBATCH --partition=GPU-shared
 #SBATCH --time=48:00:00
 #SBATCH --gpus=2
-#SBATCH --output=/ocean/projects/cis250181p/venkatas/seer_libero_pretrain_depth/logs/%x_%j.out
-#SBATCH --error=/ocean/projects/cis250181p/venkatas/seer_libero_pretrain_depth/logs/%x_%j.err
+#SBATCH --output=~/seer_logs/%x_%j.out
+#SBATCH --error=~/seer_logs/%x_%j.err
 
 # ==== ENVIRONMENT SETUP ====
 set -euo pipefail
