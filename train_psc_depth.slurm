@@ -5,18 +5,11 @@
 #SBATCH --gpus=v100-32:2
 
 
-# ==== ENVIRONMENT SETUP ====
-set -euo pipefail
-set -x  # (optional) Debug print of commands
+set -x
 
-source /opt/packages/anaconda3/2024.10-1/etc/profile.d/conda.sh
+module load anaconda3/2024.10-1 
 conda activate seer
 
-# Verify environment
-echo "Running on node: $(hostname)"
-which python
-python --version
-mkdir -p /ocean/projects/cis250181p/venkatas/seer_libero_pretrain_depth/logs
 # ==== CONFIGURE PATHS ====
 save_checkpoint_path="/ocean/projects/cis250181p/venkatas/seer_libero_pretrain_depth/checkpoints"
 root_dir="/ocean/projects/cis250181p/venkatas/Seer/data/LIBERO"
@@ -24,11 +17,10 @@ libero_path="/ocean/projects/cis250181p/venkatas/Seer/LIBERO"
 
 mkdir -p ${save_checkpoint_path}
 
-# ==== DISTRIBUTED SETTINGS ====
 GPUS_PER_NODE=2
 WORLD_SIZE=$((SLURM_NNODES * GPUS_PER_NODE))
-cd /ocean/projects/cis250181p/venkatas/Seer
-# ==== RUN TRAINING ====
+
+
 srun --ntasks=${WORLD_SIZE} \
      --ntasks-per-node=${GPUS_PER_NODE} \
      --gpus-per-task=1 \
