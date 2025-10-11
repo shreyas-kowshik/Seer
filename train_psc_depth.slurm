@@ -23,8 +23,7 @@ WORLD_SIZE=$((SLURM_NNODES * GPUS_PER_NODE))
 
 srun --ntasks=${WORLD_SIZE} \
      --ntasks-per-node=${GPUS_PER_NODE} \
-     --gpus-per-task=1 \
-     python -u -m torch.distributed.run \
+      python -u -m torch.distributed.run \
        --nnodes=${SLURM_NNODES} \
        --nproc_per_node=${GPUS_PER_NODE} \
        --rdzv_backend=c10d \
