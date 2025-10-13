@@ -34,7 +34,7 @@ srun --ntasks=${WORLD_SIZE} \
          --save_every_iter 100000 \
          --num_epochs 40 \
          --seed 42 \
-         --batch_size 32 \
+         --batch_size 64 \
          --precision fp32 \
          --learning_rate 1e-4 \
          --save_checkpoint \
