@@ -8,10 +8,12 @@ import clip
 from torch.nn.parallel import DistributedDataParallel as DDP
 from utils.distributed_utils import init_distributed_device, world_info_from_env
 
-import os
-os.environ.setdefault("MUJOCO_GL", "egl")
-os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
-os.environ.setdefault("TORCH_NCCL_BLOCKING_WAIT", "1")
+# Disable Numba JIT compilation to prevent crashes
+os.environ["NUMBA_DISABLE_JIT"] = "1"
+os.environ["NUMBA_CACHE_DIR"] = "/tmp/numba_cache"
+
+from utils.eval_utils_libero import eval_one_epoch_libero_ddp
+from utils.eval_utils_libero_mini import eval_one_epoch_libero_mini_ddp
 
 # try:
 #     from utils.eval_utils_libero import eval_one_epoch_libero_ddp as eval_one_epoch_calvin_ddp
@@ -99,8 +101,8 @@ def main():
             transformer_heads=args.transformer_heads,
             phase=args.phase,
             gripper_width=args.gripper_width,
-        )
-   
+            )
+
     random_seed(args.seed, args.rank)
     print(f"Start running training on rank {args.rank}.")
 
@@ -138,22 +140,20 @@ def main():
     eval_log_dir = 'evaluate'
 
     if args.finetune_type == "libero_10":
-        if not args.seer_mini:
-            from utils.eval_utils_libero import eval_one_epoch_libero_ddp
-            eval_one_epoch_libero_ddp(
+        if args.seer_mini:
+            eval_one_epoch_libero_mini_ddp(
                 args=args,
                 model=ddp_model,
                 image_processor=model.image_processor,
                 tokenizer=clip,
             )
         else:
-            from utils.eval_utils_libero_mini import eval_one_epoch_libero_ddp
             eval_one_epoch_libero_ddp(
-                args=args,
-                model=ddp_model,
-                image_processor=model.image_processor,
-                tokenizer=clip,
-            )
+            args=args,
+            model=ddp_model,
+            image_processor=model.image_processor,
+            tokenizer=clip,
+        )
     else:
         raise NotImplementedError
 

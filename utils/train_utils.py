@@ -140,6 +140,7 @@ def train_one_epoch_calvin(
 
         with autocast():  # image_primary, image_wrist, state, language_instruction
             if args.seer_mini:
+                # breakpoint()
                 arm_pred_action, gripper_pred_action, image_pred, arm_pred_state, gripper_pred_state, loss_arm_action = model(
                 image_primary=input_image_primary,
                 image_wrist=input_image_wrist,

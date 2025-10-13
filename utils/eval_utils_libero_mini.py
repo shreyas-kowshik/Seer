@@ -73,7 +73,7 @@ def get_camera_intrinsics(sim, cam_name):
     K = np.array([[f_x, 0,   c_x],
                   [0,   f_y, c_y],
                   [0,   0,   1.0]], dtype=np.float32)
-    return K
+    return torch.from_numpy(K.astype(np.float32))
 
 def get_camera_extrinsics(sim, cam_name):
     """
@@ -92,7 +92,7 @@ def get_camera_extrinsics(sim, cam_name):
     T_world_cam = np.eye(4, dtype=np.float32)
     T_world_cam[:3, :3] = cam_mat
     T_world_cam[:3, 3] = cam_pos
-    return T_world_cam
+    return torch.from_numpy(T_world_cam.astype(np.float32))
 
 def process_depth(depth, max_depth=5):
         if depth.ndim >= 3 and depth.shape[-1] == 1:
@@ -175,6 +175,7 @@ class ModelWrapper_mini:
         # preprocess image
         image = obs["agentview_image"]
         image = Image.fromarray(image)
+        # breakpoint()
         image_x = self.image_process_fn([image])
         # expand image dimension
         image_x = image_x.unsqueeze(1).to(dtype=self.cast_type)
@@ -185,23 +186,34 @@ class ModelWrapper_mini:
         # expand image dimension
         gripper = gripper.unsqueeze(1).to(dtype=self.cast_type) 
         
+        # breakpoint()
         agentview_depth = process_depth(depthimg2Meters(env, obs["agentview_depth"]))
-        agentview_depth = agentview_depth.unsqueeze(1).to(dtype=self.cast_type) 
+        agentview_depth = torch.from_numpy(agentview_depth.astype(np.float32))
+        agentview_depth = agentview_depth.unsqueeze(0).to(dtype=self.cast_type)  # Add channel dimension: (1, 1, H, W) 
+        agentview_depth = agentview_depth.unsqueeze(1)
 
         eye_in_hand_depth = process_depth(depthimg2Meters(env, obs["robot0_eye_in_hand_depth"]))
-        eye_in_hand_depth = eye_in_hand_depth.unsqueeze(1).to(dtype=self.cast_type)
+        eye_in_hand_depth = torch.from_numpy(eye_in_hand_depth.astype(np.float32))
+        eye_in_hand_depth = eye_in_hand_depth.unsqueeze(0).to(dtype=self.cast_type)  # Add channel dimension: (1, 1, H, W)
+        eye_in_hand_depth = eye_in_hand_depth.unsqueeze(1)
 
         camera_extrinsics_agent_view = get_camera_extrinsics(env.sim, "agentview" )
-        camera_extrinsics_agent_view = camera_extrinsics_agent_view.unsqueeze(1).to(dtype=self.cast_type) 
+        camera_extrinsics_agent_view = camera_extrinsics_agent_view.unsqueeze(0).to(dtype=self.cast_type) 
+        camera_extrinsics_agent_view = camera_extrinsics_agent_view.unsqueeze(1)
         
         camera_extrinsics_eye_in_hand = get_camera_extrinsics(env.sim, "robot0_eye_in_hand" )
-        camera_extrinsics_eye_in_hand = camera_extrinsics_eye_in_hand.unsqueeze(1).to(dtype=self.cast_type) 
+        camera_extrinsics_eye_in_hand = camera_extrinsics_eye_in_hand.unsqueeze(0).to(dtype=self.cast_type) 
+        camera_extrinsics_eye_in_hand = camera_extrinsics_eye_in_hand.unsqueeze(1)
         
         camera_intrinsics_agent_view = get_camera_intrinsics(env.sim, "agentview")
-        camera_intrinsics_agent_view = camera_intrinsics_agent_view.unsqueeze(1).to(dtype=self.cast_type)
+        camera_intrinsics_agent_view = camera_intrinsics_agent_view.unsqueeze(0).to(dtype=self.cast_type)
+        camera_intrinsics_agent_view = camera_intrinsics_agent_view.unsqueeze(1)
         
         camera_intrinsics_eye_in_hand = get_camera_intrinsics(env.sim, "robot0_eye_in_hand")
-        camera_intrinsics_eye_in_hand = camera_intrinsics_eye_in_hand.unsqueeze(1).to(dtype=self.cast_type)
+        camera_intrinsics_eye_in_hand = camera_intrinsics_eye_in_hand.unsqueeze(0).to(dtype=self.cast_type)
+        camera_intrinsics_eye_in_hand = camera_intrinsics_eye_in_hand.unsqueeze(1)
+
+        # breakpoint()
 
         # expand text dimension
         text_x = self.text_process_fn([goal])
@@ -224,8 +236,11 @@ class ModelWrapper_mini:
             camera_intrinsics_agent_view = camera_intrinsics_agent_view.to(device)
             camera_intrinsics_eye_in_hand = camera_intrinsics_eye_in_hand.to(device)
 
+            # breakpoint()
             agentview_depth = F.interpolate(agentview_depth, size=(224, 224), mode="bilinear", align_corners=False)
             eye_in_hand_depth = F.interpolate(eye_in_hand_depth, size=(224, 224), mode="bilinear", align_corners=False)
+            agentview_depth = agentview_depth.unsqueeze(0)
+            eye_in_hand_depth = eye_in_hand_depth.unsqueeze(0)
 
             text_x = text_x.to(device)
             gripper = gripper.to(device)
@@ -266,6 +281,7 @@ class ModelWrapper_mini:
                 input_image_wrist = torch.cat([image_wrist, image_wrist[:, -1].repeat(1, self.history_len-num_step, 1, 1, 1)], dim=1)
                 input_state = torch.cat([state, state[:, -1].repeat(1, self.history_len-num_step, 1)], dim=1)
                 # pad new additions
+                # breakpoint()
                 input_image_primary_depth = torch.cat([image_primary_depth, image_primary_depth[:, -1].repeat(1, self.history_len-num_step, 1, 1, 1)], dim=1)
                 input_image_wrist_depth = torch.cat([image_wrist_depth, image_wrist_depth[:, -1].repeat(1, self.history_len-num_step, 1, 1, 1)], dim=1)
                 intrinsics_primary = torch.cat([intrinsics_primary, intrinsics_primary[:, -1].repeat(1, self.history_len-num_step, 1, 1)], dim=1)
@@ -369,9 +385,11 @@ def evaluate_policy_ddp(args, model):
         "bddl_file_name": task_bddl_file,
         "camera_heights": args.libero_img_size,
         "camera_widths": args.libero_img_size,
-        "render_gpu_device_id":device_id
+        "render_gpu_device_id":device_id,
+        "camera_depths": True,
         }
         print("device_id :", device_id)
+        # breakpoint()
         env = OffScreenRenderEnv(**env_args)
         env.task_id = task_id
         env.task_name = task_name
@@ -424,7 +442,7 @@ def print_and_save(result_list, task_suite):
         print(f"Success rates for task {j} {task_name}:")
         print(f"{avg_success * 100:.1f}%")
 
-def eval_one_epoch_libero_ddp(args, model, image_processor, tokenizer):
+def eval_one_epoch_libero_mini_ddp(args, model, image_processor, tokenizer):
     cast_dtype = get_cast_dtype(args.precision)
     hist_len = args.sequence_length
     wrapped_model = ModelWrapper_mini(
