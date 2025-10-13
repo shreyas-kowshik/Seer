@@ -8,7 +8,10 @@ import clip
 from torch.nn.parallel import DistributedDataParallel as DDP
 from utils.distributed_utils import init_distributed_device, world_info_from_env
 
-from utils.eval_utils_libero import eval_one_epoch_libero_ddp
+import os
+os.environ.setdefault("MUJOCO_GL", "egl")
+os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
+os.environ.setdefault("TORCH_NCCL_BLOCKING_WAIT", "1")
 
 # try:
 #     from utils.eval_utils_libero import eval_one_epoch_libero_ddp as eval_one_epoch_calvin_ddp
@@ -20,6 +23,7 @@ from torch.distributed.elastic.multiprocessing.errors import record
 from utils.arguments_utils import get_parser
 from pdb import set_trace
 from models.seer_model import SeerAgent
+from models.seer_model_mini import SeerAgentMini
 
 def random_seed(seed=42, rank=0):
     torch.manual_seed(seed + rank)
@@ -36,29 +40,67 @@ def main():
     random_seed(args.seed)
 
     # model
-    model = SeerAgent(
-        finetune_type=args.finetune_type,
-        clip_device=device_id,
-        vit_checkpoint_path=args.vit_checkpoint_path,
-        sequence_length=args.sequence_length,
-        num_resampler_query=args.num_resampler_query,
-        num_obs_token_per_image=args.num_obs_token_per_image,
-        calvin_input_image_size=args.calvin_input_image_size,
-        patch_size=args.patch_size,
-        action_pred_steps=args.action_pred_steps,
-        obs_pred=args.obs_pred,
-        atten_only_obs=args.atten_only_obs,
-        attn_robot_proprio_state=args.attn_robot_proprio_state,
-        atten_goal=args.atten_goal,
-        atten_goal_state=args.atten_goal_state,
-        mask_l_obs_ratio=args.mask_l_obs_ratio,
-        transformer_layers=args.transformer_layers,
-        hidden_dim=args.hidden_dim,
-        transformer_heads=args.transformer_heads,
-        phase=args.phase,
-        gripper_width=args.gripper_width,
-        )
+    if args.seer_mini:
+        model = SeerAgentMini(
+            finetune_type=args.finetune_type,
+            clip_device=device_id,
+            vit_checkpoint_path=args.vit_checkpoint_path,
+            sequence_length=args.sequence_length,
+            num_resampler_query=args.num_resampler_query,
+            num_obs_token_per_image=args.num_obs_token_per_image,
+            calvin_input_image_size=args.calvin_input_image_size,
+            patch_size=args.patch_size,
+            action_pred_steps=args.action_pred_steps,
+            obs_pred=args.obs_pred,
+            atten_only_obs=args.atten_only_obs,
+            attn_robot_proprio_state=args.attn_robot_proprio_state,
+            atten_goal=args.atten_goal,
+            atten_goal_state=args.atten_goal_state,
+            mask_l_obs_ratio=args.mask_l_obs_ratio,
+            transformer_layers=args.transformer_layers,
+            hidden_dim=args.hidden_dim,
+            transformer_heads=args.transformer_heads,
+            phase=args.phase,
+            gripper_width=args.gripper_width,
 
+            # 🔹 New arguments
+            encoder_type=args.encoder_type,
+            dino_variant=args.dino_variant,
+            allow_obs_pred_with_resnet=args.allow_obs_pred_with_resnet,
+            use_text=args.use_text,
+            use_state=args.use_state,
+            use_wrist_view=args.use_wrist_view,
+            model_size=args.model_size,
+            use_depth=args.use_depth,
+            )
+        print(f"[INFO] Encoder: {args.encoder_type} ({args.dino_variant if args.encoder_type=='vit' else 'ResNet'}) | "
+            f"Use text: {args.use_text} | Use state: {args.use_state} | Wrist view: {args.use_wrist_view} | "
+            f"Model size: {args.model_size}")
+
+    else:
+        model = SeerAgent(
+            finetune_type=args.finetune_type,
+            clip_device=device_id,
+            vit_checkpoint_path=args.vit_checkpoint_path,
+            sequence_length=args.sequence_length,
+            num_resampler_query=args.num_resampler_query,
+            num_obs_token_per_image=args.num_obs_token_per_image,
+            calvin_input_image_size=args.calvin_input_image_size,
+            patch_size=args.patch_size,
+            action_pred_steps=args.action_pred_steps,
+            obs_pred=args.obs_pred,
+            atten_only_obs=args.atten_only_obs,
+            attn_robot_proprio_state=args.attn_robot_proprio_state,
+            atten_goal=args.atten_goal,
+            atten_goal_state=args.atten_goal_state,
+            mask_l_obs_ratio=args.mask_l_obs_ratio,
+            transformer_layers=args.transformer_layers,
+            hidden_dim=args.hidden_dim,
+            transformer_heads=args.transformer_heads,
+            phase=args.phase,
+            gripper_width=args.gripper_width,
+        )
+   
     random_seed(args.seed, args.rank)
     print(f"Start running training on rank {args.rank}.")
 
@@ -78,7 +120,8 @@ def main():
             model.image_decoder_obs_pred_projector.bfloat16()
 
     model.clip_model.requires_grad_(False)
-    model.vision_encoder.requires_grad_(False)
+    if not args.use_depth:
+        model.vision_encoder.requires_grad_(False)
     model = model.to(device_id)
     model._init_model_type()
   
@@ -95,12 +138,22 @@ def main():
     eval_log_dir = 'evaluate'
 
     if args.finetune_type == "libero_10":
-        eval_one_epoch_libero_ddp(
-            args=args,
-            model=ddp_model,
-            image_processor=model.image_processor,
-            tokenizer=clip,
-        )
+        if not args.seer_mini:
+            from utils.eval_utils_libero import eval_one_epoch_libero_ddp
+            eval_one_epoch_libero_ddp(
+                args=args,
+                model=ddp_model,
+                image_processor=model.image_processor,
+                tokenizer=clip,
+            )
+        else:
+            from utils.eval_utils_libero_mini import eval_one_epoch_libero_ddp
+            eval_one_epoch_libero_ddp(
+                args=args,
+                model=ddp_model,
+                image_processor=model.image_processor,
+                tokenizer=clip,
+            )
     else:
         raise NotImplementedError
 
