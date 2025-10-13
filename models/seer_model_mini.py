@@ -159,7 +159,7 @@ class SeerAgentMini(nn.Module):
         gripper_width=False,
         model_size: str = None,                  # {"tiny","small","base"} or None to use explicit dims
         encoder_type: str = "vit",               # {"vit","resnet"}
-        resnet_variant: str = "resnet18",        # torchvision name
+        resnet_variant: str = "resnet50",        # torchvision name
         resnet_pretrained: bool = True,
         allow_obs_pred_with_resnet: bool = True, # you asked this to be a flag
         use_text: bool = True,
@@ -306,6 +306,8 @@ class SeerAgentMini(nn.Module):
                 self.RESNET_OUT_DIM = 2048
             else:
                 raise ValueError(f"Unsupported resnet_variant {resnet_variant}")
+            
+            # breakpoint()
             # keep everything up to the global pool (avgpool) + flatten
             rn.fc = nn.Identity()
             self.vision_encoder = rn
@@ -320,7 +322,9 @@ class SeerAgentMini(nn.Module):
             # Perceiver-related placeholders to keep type checks safe
             self.perceiver_resampler = None
             self.NUM_RESAMPLER_QUERY = 0
+            print("Using ResNet encoder: ", resnet_variant)
 
+        # breakpoint()
         # --------------- PRED TOKENS / MASK ---------------
         if self.action_pred_steps > 0:
             self.action_pred_token = nn.Parameter(
@@ -547,6 +551,8 @@ class SeerAgentMini(nn.Module):
                 ).to(self.device),
                 requires_grad=False,
             )
+        
+        # breakpoint()
 
         B, S, _ = state.shape
         device = image_primary.device
@@ -722,6 +728,8 @@ class SeerAgentMini(nn.Module):
             if self.obs_pred and not self.allow_obs_pred_with_resnet:
                 self.obs_pred = False
 
+        # breakpoint()
+        
         # -------- aggregate embeddings --------
         embed_list = []
         if self.use_text and text_embedding is not None:

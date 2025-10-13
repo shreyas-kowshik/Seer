@@ -2,14 +2,14 @@
 
 ### ===== CONFIGURE THESE PATHS ===== ###
 save_checkpoint_path="checkpoints/"
-root_dir="/home/venky/Projects/Seer/data/LIBERO"
-libero_path="/home/venky/Projects/Seer/LIBERO"
+root_dir="/ocean/projects/cis250181p/kowshik/"
+libero_path="/ocean/projects/cis250181p/kowshik/LIBERO/"
 ### ================================== ###
 
 node=1
 node_num=1
 
-torchrun --nnodes=${node} --nproc_per_node=${node_num} --master_port=10211 train.py \
+python -m pdb -m torch.distributed.run --nnodes=${node} --nproc_per_node=${node_num} --master_port=10211 train.py \
     --traj_cons \
     --rgb_pad 10 \
     --gripper_pad 4 \
@@ -25,7 +25,6 @@ torchrun --nnodes=${node} --nproc_per_node=${node_num} --master_port=10211 train
     --save_checkpoint \
     --finetune_type libero_pretrain \
     --root_dir ${root_dir} \
-    --wandb_project seer \
     --weight_decay 1e-4 \
     --num_resampler_query 3 \
     --run_name libero_pretrain_depth_clip_resnet_action_only \
@@ -46,9 +45,10 @@ torchrun --nnodes=${node} --nproc_per_node=${node_num} --master_port=10211 train
     --mask_l_obs_ratio 0.5 \
     --warmup_epochs 1 \
     --libero_path ${libero_path} \
-    --report_to_wandb \
     --use_text \
     --use_state \
     --use_depth \
     --model_size tiny \
     --seer_mini
+    # --wandb_project seer \
+    # --report_to_wandb \

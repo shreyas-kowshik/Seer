@@ -397,6 +397,7 @@ class RGBD_CLIP_RoPE_Embedder(nn.Module):
     def forward(self, rgb, depth, intrinsics, extrinsics):
         # Input shapes: rgb (B, C, H, W), depth (B, 1, H, W), intrinsics (B, 3, 3)
         B, _, H_in, W_in = rgb.shape
+        # breakpoint()
         
         # 1. Extract visual features from RGB
         # rgb_normalized = self.clip_normalize(rgb)
@@ -457,6 +458,7 @@ class RGBD_CLIP_RoPE_Embedder(nn.Module):
         f"tokens {sampled_tokens.shape} vs xyz {sampled_xyz.shape}"
 
         embedded_tokens = self.rope(sampled_xyz, sampled_tokens)
+        # breakpoint()
         
         return embedded_tokens 
 
